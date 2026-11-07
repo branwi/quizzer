@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from app.dependencies import AppSettings, DbSession, unauthorized
 from app.schemas import LoginRequest, LoginResponse, RegisterRequest, UserPublic
-from app.security import COOKIE_NAME, create_access_token
+from app.security import COOKIE_NAME
 from app.services import auth
 
 public_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -29,22 +29,20 @@ def login(
     data: LoginRequest, db: DbSession, settings: AppSettings, response: Response
 ) -> LoginResponse:
     try:
-        user = auth.authenticate(db, data)
+        result = auth.authenticate(db, data, settings)
     except auth.InvalidCredentials:
         raise unauthorized("Invalid email or password") from None
-    token = create_access_token(user.id, settings)
-    seconds = settings.access_token_minutes * 60
     response.set_cookie(
         key=COOKIE_NAME,
-        value=token,
-        max_age=seconds,
+        value=result.access_token,
+        max_age=result.expires_in,
         path="/",
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
     )
     no_store(response)
-    return LoginResponse(user=user, access_token=token, expires_in=seconds)
+    return result
 
 
 @private_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

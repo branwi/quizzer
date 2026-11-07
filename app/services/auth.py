@@ -1,12 +1,19 @@
-from secrets import token_urlsafe
+from secrets import compare_digest, token_urlsafe
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.models import User
-from app.schemas import LoginRequest, RegisterRequest, UserPublic
-from app.security import hash_password, verify_password
+from app.schemas import LoginRequest, LoginResponse, RegisterRequest, UserPublic
+from app.security import (
+    TokenIdentity,
+    account_version,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 
 # Unknown accounts still take the expensive password-verification path.
 _DUMMY_PASSWORD_HASH = hash_password(token_urlsafe(32))
@@ -48,17 +55,23 @@ def register(db: Session, data: RegisterRequest) -> UserPublic:
     return public_user(user)
 
 
-def authenticate(db: Session, data: LoginRequest) -> UserPublic:
+def authenticate(db: Session, data: LoginRequest, settings: Settings) -> LoginResponse:
     user = db.scalar(select(User).where(User.email == data.email))
     hashed = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
     valid = verify_password(data.password.get_secret_value(), hashed)
     if user is None or not valid:
         raise InvalidCredentials
-    return public_user(user)
+    return LoginResponse(
+        user=public_user(user),
+        access_token=create_access_token(user.id, settings, hashed_password=user.password_hash),
+        expires_in=settings.access_token_minutes * 60,
+    )
 
 
-def current_user(db: Session, user_id: int) -> UserPublic:
-    user = db.get(User, user_id)
-    if user is None:
+def current_user(db: Session, identity: TokenIdentity, settings: Settings) -> UserPublic:
+    user = db.get(User, identity.user_id)
+    if user is None or not compare_digest(
+        identity.account_version, account_version(user.password_hash, settings)
+    ):
         raise InvalidCredentials
     return public_user(user)

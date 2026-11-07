@@ -5,4 +5,7 @@ pydantic-settings>=2.6,<3
 pwdlib[argon2]>=0.2,<1
 PyJWT>=2.10,<3
 email-validator>=2.2,<3
+Jinja2>=3.1,<4
+python-multipart>=0.0.20,<1
+alembic>=1.13,<2
 

@@ -1,6 +1,11 @@
 # Quiz Platform: Technical Design Document
 
-_Status: Draft v1 · November 7, 2026 · Stack: FastAPI, SQLAlchemy 2.0, SQLite, Jinja2 + HTMX_
+_Status: v1 implemented · November 7, 2026 · Stack: FastAPI, SQLAlchemy 2.0, SQLite, Jinja2 + HTMX_
+
+Implementation status: milestones 1–9 are implemented. Jinja2/HTMX pages,
+analytics, Alembic migrations, and Docker are included. Automated HTTP and container
+checks pass; interactive visual browser QA was blocked by browser tooling. See
+`IMPLEMENTATION_PLAN.md` for verification limits and `README.md` to run the app.
 
 ## 1. Overview
 
@@ -69,7 +74,7 @@ SQLite       single file database
 2. Dependencies resolve the database session and the current user.
 3. The router calls a service function.
 4. The service reads and writes through the ORM.
-5. The router returns the result, and `response_model` filters it down to the allowed fields.
+5. The service returns an explicitly filtered DTO, and the router's `response_model` validates and serializes it. Complete ORM objects and snapshots are never passed to student responses.
 
 ## 4. Technology Choices
 
@@ -83,7 +88,7 @@ SQLite       single file database
 | Auth             | JWT in HTTP-only cookie | Stateless, works with server-rendered pages, bearer header also accepted for Swagger | Server-side sessions                                  |
 | Password hashing | Argon2 (pwdlib)         | Current best practice                                                                | bcrypt                                                |
 | Testing          | pytest + TestClient     | Fast, supports dependency overrides                                                  | None                                                  |
-| Migrations       | Alembic (optional)      | Schema changes without data loss                                                     | `create_all` at startup                               |
+| Migrations       | Alembic baseline + migration command | Tracked upgrades; existing baseline data is backed up and adopted without resetting it | `create_all` alone |
 
 ## 5. Data Model
 
@@ -160,16 +165,20 @@ attempts 1 ── * answers
 | question_id | FK to questions, nullable | Set to null if the source question is deleted                                                         |
 | position    | integer                   | Display order                                                                                         |
 | points      | integer                   | Default 1                                                                                             |
-| snapshot    | JSON                      | Frozen copy of type, text, choices, correct_answer, and explanation, taken when the quiz is published |
+| snapshot    | JSON, nullable            | Null in drafts; frozen type, text, choices, correct_answer, and explanation at publication |
 
 ### attempts and answers
 
 | Table    | Columns                                                                                                                                          |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | attempts | id (PK), quiz_id (FK), student_id (FK), started_at, submitted_at (nullable), score (nullable), max_score                                         |
-| answers  | id (PK), attempt_id (FK), quiz_question_id (FK), response (JSON), is_correct (boolean), points_awarded. Unique on (attempt_id, quiz_question_id) |
+| answers  | id (PK), attempt_id (FK component), quiz_question_id (FK component), quiz_id (shared FK component), response (JSON), is_correct (boolean), points_awarded. Unique on (attempt_id, quiz_question_id) |
 
 Answers are written only when an attempt is submitted, so every answer row belongs to a submitted attempt.
+
+Each submission writes one answer row per question, including unanswered ones.
+Composite foreign keys using `answers.quiz_id` prevent cross-quiz answers.
+Python datetimes are timezone-aware UTC; naive input datetimes are rejected.
 
 ### Indexes
 
@@ -187,7 +196,7 @@ Answers are written only when an attempt is submitted, so every answer row belon
 
 ## 6. API Design
 
-All JSON routes live under `/api`. The static route `/api/quizzes/assigned` must be declared before `/api/quizzes/{id}` so it is not captured as an id.
+All resource JSON routes live under `/api`; `/health` is operational. The static route `/api/quizzes/assigned` is declared before `/api/quizzes/{id}`. All routes below are implemented.
 
 | Method           | Path                          | Used by | Purpose                                                              |
 | ---------------- | ----------------------------- | ------- | -------------------------------------------------------------------- |
@@ -201,6 +210,8 @@ All JSON routes live under `/api`. The static route `/api/quizzes/assigned` must
 | GET, PUT, DELETE | /api/questions/{id}           | teacher | Read, update, or delete an own question                              |
 | GET              | /api/bank/questions           | any     | Search public questions (q, topic, page, page_size)                  |
 | POST             | /api/quizzes                  | teacher | Create a draft quiz with question ids and points                     |
+| GET              | /api/quizzes                  | any     | Paginated own quizzes (teacher drafts/assigned, student practice)     |
+| GET              | /api/quizzes/{id}             | any     | Owner/assignee view; student question content omits answer keys       |
 | PUT              | /api/quizzes/{id}             | teacher | Edit a draft quiz                                                    |
 | POST             | /api/quizzes/{id}/publish     | teacher | Snapshot the questions and freeze the quiz                           |
 | POST             | /api/quizzes/{id}/assignments | teacher | Assign a published quiz to individual students (list of student ids) |
@@ -216,41 +227,49 @@ All JSON routes live under `/api`. The static route `/api/quizzes/assigned` must
 
 - `QuestionCreate` is a discriminated union on `type`. MCQ requires 2 to 6 choices with unique ids and a correct_answer matching one of them. True/false requires a boolean. Short answer requires at least one accepted string.
 - `QuestionForTeacher` includes `correct_answer` and `explanation`.
-- `QuestionForStudent` omits both. Routes that return questions to students set `response_model=QuestionForStudent`, so FastAPI strips the answer key even if the underlying object contains it.
-- The bank endpoint picks the schema by role: teachers get the full version, students get the safe one.
+- `QuestionForStudent` omits both; quiz content uses the similarly safe `SnapshotForStudent`. Services construct these projections before returning.
+- Bank and quiz views use a `view` discriminator (`teacher` or `student`), so role-specific response schemas cannot serialize a student view as a teacher view.
+- Attempts use a `state` discriminator: `in_progress` has safe question content; `submitted` has graded review content. Workflow contracts live in `app/workflow_schemas.py`.
 
 ## 7. Authentication
 
 ### Authentication
 
 - Passwords are hashed with Argon2 and never stored or logged in plain text.
-- Login issues a JWT with the user id as subject and a 60 minute expiry. It is set as an HTTP-only, SameSite=Lax cookie.
+- Login issues a JWT with the user id as subject, issue time, account-version fingerprint, and a 60 minute expiry. The keyed fingerprint binds the token to the account's salted password hash and prevents access to a replacement account if SQLite reuses a deleted id. The cookie is HTTP-only and SameSite=Lax; `COOKIE_SECURE` enables HTTPS-only cookies.
 - `get_current_user` reads the cookie first and falls back to the `Authorization: Bearer` header, so the Swagger UI Authorize button works.
 - Secrets and settings come from environment variables through a settings class.
 
-Every route except register and login requires a logged-in user, so an anonymous request gets 401. A user's role decides which pages and features the UI shows, and the Used by column in the API table says which role each route is built for. The server does not check roles in v1.
+Every private API route requires login (401 for missing/invalid/expired tokens).
+Register, login, health, docs, ReDoc, and OpenAPI are public. The server enforces
+teacher/student roles, resource ownership, assignment eligibility, and attempt
+ownership. Wrong roles return 403; resources belonging to another user return 404.
+Self-selected teacher registration remains permitted for this local demo.
 
 ### Dependencies (sketch)
 
 ```python
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> UserPublic:
     token = request.cookies.get('access_token') or read_bearer_header(request)
-    user_id = decode_token(token)  # raises 401 if missing, invalid, or expired
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=401)
-    return user
+    identity = decode_access_token(token, settings)  # reject untrusted claims
+    return auth_service.current_user(db, identity, settings)  # verify account binding, return safe DTO
 
 @router.post('/questions')
 def create_question(
     data: QuestionCreate,
-    user: User = Depends(get_current_user),
+    user: UserPublic = Depends(get_teacher),
     db: Session = Depends(get_db),
 ):
     return questions_service.create(db, user, data)
 ```
 
-Login is enforced by one dependency in the route signature, and tests can override it.
+Private routers inherit `get_current_user` from their parent API router. Teacher
+and student dependencies narrow role-specific endpoints; services enforce the
+same rules independently of HTTP. Tests can override authentication/database dependencies.
 
 ## 8. Core Logic
 
@@ -263,12 +282,14 @@ def normalize(text: str) -> str:
     return ' '.join(text.split()).casefold()
 
 def grade_short_answer(snapshot: dict, response: str) -> bool:
+    if not isinstance(response, str) or not response.strip():
+        return False
     accepted = {normalize(a) for a in snapshot['correct_answer']}
     return normalize(response) in accepted
 
 GRADERS = {
-    'mcq': lambda snap, resp: resp == snap['correct_answer'],
-    'true_false': lambda snap, resp: resp == snap['correct_answer'],
+    'mcq': lambda snap, resp: isinstance(resp, str) and resp == snap['correct_answer'],
+    'true_false': lambda snap, resp: type(resp) is bool and resp is snap['correct_answer'],
     'short_answer': grade_short_answer,
 }
 
@@ -280,9 +301,9 @@ Points are all or nothing per question in v1.
 
 ### Quiz publishing
 
-1. Verify the quiz is a draft with at least one question.
+1. Verify teacher ownership and that the quiz is a draft with at least one question. Recheck that every source still exists and is owned by the teacher or public.
 2. For each linked question, copy its current content into `quiz_questions.snapshot`.
-3. Set `status` to published. After this, the quiz content is immutable.
+3. Set `status` to published in the same transaction. After this, quiz metadata, limits, and question content are immutable. Draft snapshots are null; an unavailable/deleted draft source blocks publication without partial writes.
 
 Self-made practice quizzes are created and published in one step, with `kind` set to self_made and unlimited attempts.
 
@@ -290,20 +311,38 @@ Self-made practice quizzes are created and published in one step, with `kind` se
 
 After publishing, the teacher picks individual students from the student list and posts their ids to the assignments endpoint. The service creates one `quiz_assignments` row for each student who does not already have one, so a quiz can also be assigned to more students later.
 
+The student picker is paginated over all registered students. Invalid/nonstudent
+ids reject the entire request; duplicate assignments are idempotent.
+
 ### Attempt lifecycle
 
-**Start:** verify the quiz is published, the due date has not passed, and the attempt count is below `max_attempts`. Create an attempt row with `submitted_at` null and return the questions through the student schema.
+**Start:** require a student who is assigned the published quiz or owns the practice
+quiz. Reject at or after the due date. Resume an existing open attempt (200), or
+check all starts against `max_attempts` and create one (201). A start consumes an
+attempt; repeated starts resume it. The response contains only safe question content.
 
-**Submit:** inside one transaction, verify the attempt has not been submitted. Grade each answer against its snapshot, write the answer rows, and set `score`, `max_score`, and `submitted_at`. A second submit returns 409.
+**Submit:** verify attempt ownership and eligibility, reject already-submitted
+attempts (409), and enforce the deadline. Reject duplicate/foreign quiz-question
+ids and malformed response types (422). Grade every question against its snapshot,
+write one answer row per question, and set score/submission time in one transaction.
+Missing/null responses score zero. A second submission returns 409.
 
 **Review:** available only after submission. It returns the snapshot's correct answers and explanations alongside the student's responses.
 
+SQLite workflow writes acquire `BEGIN IMMEDIATE` before reading mutable quiz or
+attempt state, and submission uses a conditional `submitted_at IS NULL` update.
+This serializes concurrent starts/submissions; scores and answers roll back
+together on failure. File-backed concurrency tests verify these guarantees. See
+[SQLite transaction behavior](https://www.sqlite.org/lang_transaction.html).
+Workflow services own their transaction and require callers to commit unrelated
+pending work first. PostgreSQL concurrency remains unverified.
+
 ### Question bank search
 
-- Filters: free text on question text and topic. Only rows with `is_public` true are searched.
-- Offset pagination with `page` and `page_size`, capped at 50.
-- Text search uses `LIKE` in v1. SQLite's FTS5 is the planned upgrade.
-- Students select questions in the UI and post the ids to the practice endpoint, which validates that every id is public.
+- Filters: free text on question text/topic, exact topic, and question type. Only public rows are searched, for both roles.
+- Offset pagination starts at page 1, defaults to 20 items, and accepts page sizes 1–50; invalid bounds return 422. Ordering is newest first with an id tie breaker.
+- Text search uses escaped `LIKE` in v1, so `%` and `_` are literal. SQLite's FTS5 is the planned upgrade.
+- Students post 1–100 unique public question ids to the practice endpoint. Creation validates the full selection, snapshots it, and publishes atomically. Practice has one point per question, no deadline, and unlimited attempts through the same attempt service.
 
 ### Analytics
 
@@ -320,11 +359,25 @@ GROUP BY qq.id, qq.position
 ORDER BY accuracy ASC;
 ```
 
-The score distribution is a second query that buckets `attempts.score / attempts.max_score` for submitted attempts.
+The score distribution buckets submitted attempts into percentage intervals
+`[0,20)`, `[20,40)`, `[40,60)`, `[60,80)`, and `[80,100]`. An aggregate summary
+provides submitted/open counts and average/min/max percentage. Unsubmitted attempts
+are excluded from score/accuracy calculations; unanswered questions are incorrect.
+Empty averages/accuracies are null. Analytics and results require teacher ownership
+and are shown at `/quizzes/{id}/results` as well as the JSON analytics endpoint.
 
 ## 9. Frontend
 
-Pages are server-rendered with Jinja2 using a base layout and partial templates. HTMX handles the interactive parts without a JavaScript framework. The `web/` routers call the same service functions as the JSON API, so no business logic is duplicated.
+Server-rendered Jinja2 pages use a base layout, reusable macros, and HTMX partials.
+`web/` routers parse browser forms, validate Pydantic data, and call the same
+services as JSON routers. The bank and builder support live filtering and selection
+across partial refreshes. Static CSS/JS and pinned HTMX are served locally.
+
+Browser forms have signed double-submit CSRF tokens bound to the current JWT (or
+anonymous browser session before login). Private HTML/partials are not cached;
+HTMX history caching is disabled. Failed/expired login redirects to `/login`.
+Role/ownership and snapshot projection rules apply equally to HTML and JSON.
+Form values are escaped; passwords are never echoed on errors.
 
 | Page               | Behavior                                                                                                                   |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -337,6 +390,10 @@ Pages are server-rendered with Jinja2 using a base layout and partial templates.
 | Attempt review     | Graded results with correct answers and explanations                                                                       |
 
 The Swagger UI at `/docs` is kept enabled and doubles as a live API demo.
+
+Browser entry points are `/`, `/login`, `/register`, `/questions`, `/quizzes`,
+`/bank`, `/assigned`, and `/attempts`. Quiz detail links expose edit/publish/assign
+and results where permitted. Students can review prior attempts by quiz title.
 
 ## 10. Project Structure
 
@@ -364,7 +421,7 @@ quizapp/
 │   ├── test_services.py
 │   └── test_auth.py
 ├── scripts/seed.py         # demo teacher, students, and sample questions
-├── alembic/                # optional migrations
+├── alembic/                # explicit baseline and future revisions
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
@@ -372,9 +429,10 @@ quizapp/
 
 ### Configuration and running
 
-- Settings: `SECRET_KEY`, `DATABASE_URL`, and `ACCESS_TOKEN_MINUTES`, read from the environment.
+- Settings: `SECRET_KEY` (random, at least 32 bytes), `DATABASE_URL`, `ACCESS_TOKEN_MINUTES`, and `COOKIE_SECURE`, read from environment variables or an ignored `.env`.
 - Local: `uvicorn app.main:app --reload`.
-- The Dockerfile runs the same command, so the demo works on any machine.
+- `python -m scripts.migrate` creates/upgrades a tracked schema, or backs up and adopts a matching untracked baseline. An explicit Alembic revision contains all seven domain tables; existing data is preserved.
+- Docker runs migrations then Uvicorn as a non-root user, with SQLite in a persistent `/data` volume and an HTTP health check. Compose binds local port 8000 and reads a persistent secret from the environment/ignored `.env`; seeding is a separate command.
 
 ## 11. Testing Strategy
 
@@ -383,7 +441,11 @@ quizapp/
 | Unit: grading | Every question type with correct, incorrect, empty, and whitespace or case variants                                                   |
 | Service       | Publishing freezes snapshots. Attempts respect max_attempts and due dates. Double submit is rejected                                  |
 | API           | `TestClient` against in-memory SQLite, with `get_db` overridden per test                                                              |
-| Login         | Registration and login work, passwords are stored hashed, and every route except register and login returns 401 without a valid token |
+| Login         | Registration/login work, passwords are hashed, and every private API operation rejects missing/invalid/expired tokens; health/docs/register/login remain public |
+| Concurrency   | File-backed SQLite: simultaneous starts resume one attempt; double submits grade once; assignments remain idempotent |
+| Web/forms     | HTML login/register/logout, editor/build/assignment/take/review/practice, CSRF binding, escaping, pagination, and safe HTMX partials |
+| Analytics     | Submitted-only aggregates, empty results, exact bucket boundaries, owner/role access, and frozen prompts |
+| Migrations    | Fresh baseline, safe adoption/backup of existing data, repeatability, and refusal of an unknown schema |
 | Contract      | Student-facing responses never contain `correct_answer` or `explanation` before submission                                            |
 
 The goal is not a coverage number. The goal is that the two riskiest areas, grading correctness and login, are fully pinned down.
@@ -394,18 +456,26 @@ The goal is not a coverage number. The goal is that the two riskiest areas, grad
 | --------- | ------------------------------------------------------------------------- |
 | Passwords | Argon2 hashes, and generic login error messages                           |
 | Sessions  | JWT with a 60 minute expiry in an HTTP-only, SameSite=Lax cookie          |
-| Access    | Login required on every route except register and login                   |
+| Access    | Private API login plus role, ownership, assignment, and attempt-owner checks |
 | Secrets   | Environment variables, never committed                                    |
-| Not in v1 | Server-side role checks, ownership checks, CSRF tokens, and rate limiting |
+| Browser forms | Signed JWT-bound CSRF tokens on every HTML mutation |
+| Not in v1 | Login rate limiting and additional JSON API CSRF hardening |
 
-Login is the only security control in v1. The role stored on each user decides which pages and features the UI shows, but the server does not enforce it, so a logged-in student could call teacher endpoints directly. That is acceptable for a local demo, and the hardening steps are listed under future work.
+Services and API dependencies enforce access rules. Student bank/quiz/in-progress
+responses explicitly omit answer keys and explanations; only an owned submitted
+attempt reveals its graded review. This supersedes the draft's login-only access
+policy. HTML forms now have CSRF protection; rate limiting and further JSON API
+CSRF hardening remain future deployment work for this local demo.
 
 ## 13. Milestones
+
+Milestones 1–9 are implemented and covered by automated checks. Interactive visual
+browser verification remains unavailable because of browser-tool policy support.
 
 | #   | Milestone              | Done when                                                                                                                |
 | --- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | 1   | Foundations            | Models, `database.py`, and the seed script exist, and every table can be created and queried from a Python shell         |
-| 2   | Login                  | Register and login work, and every route except register and login returns 401 without a valid cookie                    |
+| 2   | Login                  | Register/login work, and private API routes reject missing/invalid/expired cookies or bearer tokens; operational/docs routes stay public |
 | 3   | Question CRUD          | Teachers can create every question type, and malformed questions are rejected by validation                              |
 | 4   | Grading engine         | `grade()` is covered by unit tests for every type and edge case                                                          |
 | 5   | Quizzes and assignment | A teacher can build, publish, and assign a quiz to individual students, and editing a source question does not change it |
@@ -426,24 +496,26 @@ Login is the only security control in v1. The role stored on each user decides w
 | Sync endpoints                            | async                    | Simpler code, and SQLite gains little from async                                  |
 | Server-rendered UI                        | Single-page app          | One codebase and far less to explain                                              |
 | Offset pagination                         | Keyset pagination        | Simple, and fine at this data size                                                |
-| SQLite                                    | PostgreSQL               | No setup now, and only the connection string changes later                        |
+| SQLite                                    | PostgreSQL               | No local setup; switching also requires a driver, migrations, and integration checks |
 
 ### Future work
 
 - Classes or groups, so a teacher can assign a quiz to many students at once.
-- Server-side role and ownership checks, CSRF protection, and login rate limiting.
+- JSON API CSRF hardening and login rate limiting.
 - Tags as a many-to-many relationship instead of a single topic column.
 - Timed quizzes and per-question time limits.
 - Multi-select questions and partial credit.
 - CSV import and export of questions.
 - Student-submitted questions with teacher moderation.
-- PostgreSQL and Alembic-managed migrations for a real deployment.
+- PostgreSQL integration and deployment-specific migration policies.
 - SQLite FTS5 for ranked question search.
 
-## 15. Open Questions
+## 15. Adopted Behavior Decisions
 
-1. Can teachers include other teachers' public questions in their quizzes? This document assumes yes.
-2. Should students see correct answers immediately after submitting, or only after the due date? This document assumes immediately.
-3. Can a teacher unpublish a quiz that already has attempts? This document assumes no.
-4. Can students retake assigned quizzes? This document assumes one attempt by default, configurable per quiz through `max_attempts`.
-5. Does the assignment picker list every registered student? This document assumes yes.
+1. Teachers may use their own and other teachers' public questions; eligibility is checked again at publication.
+2. Students see correct answers immediately after submitting their own attempt.
+3. Published quizzes cannot be edited or unpublished, including due dates and attempt limits.
+4. Assigned quizzes default to one start, with a configurable positive limit or null for unlimited. An open attempt is resumed; practice is always unlimited.
+5. The assignment picker lists every registered student through pagination.
+6. Starts/resumes and submissions are rejected at or after the UTC deadline; owned attempts remain readable afterward.
+7. Omitted responses score zero; foreign/duplicate question ids and malformed response types are rejected without partial grading.

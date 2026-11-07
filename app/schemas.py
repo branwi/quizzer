@@ -1,10 +1,21 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 from email_validator import EmailNotValidError, validate_email
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StrictBool,
+    StrictStr,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
-from app.models import Role
+from app.models import QuestionType, Role
 
 
 def normalize_email(value: str) -> str:
@@ -61,3 +72,91 @@ class LoginResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok"]
     milestone: Literal["authentication"]
+
+
+NonblankAnswer = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+]
+
+
+class Choice(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: str = Field(min_length=1, max_length=50)
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class QuestionContent(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    text: str = Field(min_length=1, max_length=10000)
+    topic: str = Field(min_length=1, max_length=120)
+    explanation: str | None = Field(default=None, max_length=10000)
+    is_public: StrictBool = False
+
+
+class MCQCreate(QuestionContent):
+    type: Literal["mcq"]
+    choices: list[Choice] = Field(min_length=2, max_length=6)
+    correct_answer: StrictStr
+
+    @model_validator(mode="after")
+    def validate_choice_ids(self) -> Self:
+        ids = [choice.id for choice in self.choices]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Choice ids must be unique")
+        if self.correct_answer not in ids:
+            raise ValueError("Correct answer must match a choice id")
+        return self
+
+
+class TrueFalseCreate(QuestionContent):
+    type: Literal["true_false"]
+    choices: None = None
+    correct_answer: StrictBool
+
+
+class ShortAnswerCreate(QuestionContent):
+    type: Literal["short_answer"]
+    choices: None = None
+    correct_answer: list[NonblankAnswer] = Field(min_length=1, max_length=100)
+
+
+QuestionCreate = Annotated[
+    MCQCreate | TrueFalseCreate | ShortAnswerCreate, Field(discriminator="type")
+]
+
+
+class QuestionForStudent(BaseModel):
+    id: int
+    author_id: int
+    type: QuestionType
+    text: str
+    choices: list[Choice] | None
+    topic: str
+    is_public: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionForTeacher(QuestionForStudent):
+    correct_answer: StrictStr | StrictBool | list[StrictStr]
+    explanation: str | None
+
+
+class QuestionFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    q: str | None = Field(default=None, max_length=200)
+    topic: str | None = Field(default=None, max_length=120)
+    type: QuestionType | None = None
+    is_public: bool | None = None
+    page: int = Field(default=1, ge=1, le=2**31 - 1)
+    page_size: int = Field(default=20, ge=1, le=50)
+
+
+class QuestionPage(BaseModel):
+    items: list[QuestionForTeacher]
+    total: int
+    page: int
+    page_size: int

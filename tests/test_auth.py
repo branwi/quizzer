@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 import jwt
@@ -12,6 +13,12 @@ from app.models import User
 from app.schemas import RegisterRequest
 from app.security import COOKIE_NAME, create_access_token, decode_access_token, signing_key
 from app.services import auth
+
+
+def token_for_user(db, user_id, settings):
+    return create_access_token(
+        user_id, settings, hashed_password=db.get(User, user_id).password_hash
+    )
 
 
 @pytest.mark.parametrize("role", ["student", "teacher"])
@@ -97,7 +104,7 @@ def test_login_cookie_and_current_user(client, credentials, registered, auth_set
     assert data["user"] == registered
     assert data["token_type"] == "bearer"
     assert data["expires_in"] == 3600
-    assert decode_access_token(data["access_token"], auth_settings) == registered["id"]
+    assert decode_access_token(data["access_token"], auth_settings).user_id == registered["id"]
     cookie = response.headers["set-cookie"]
     assert "HttpOnly" in cookie
     assert "SameSite=lax" in cookie
@@ -197,8 +204,8 @@ def test_malformed_authorization_rejected(client, header):
     assert client.get("/api/me", headers={"Authorization": header}).status_code == 401
 
 
-def test_bearer_fallback_and_cookie_precedence(client, registered, auth_settings):
-    first_token = create_access_token(registered["id"], auth_settings)
+def test_bearer_fallback_and_cookie_precedence(client, db, registered, auth_settings):
+    first_token = token_for_user(db, registered["id"], auth_settings)
     second = client.post(
         "/api/auth/register",
         json={
@@ -208,7 +215,7 @@ def test_bearer_fallback_and_cookie_precedence(client, registered, auth_settings
             "role": "teacher",
         },
     ).json()
-    second_token = create_access_token(second["id"], auth_settings)
+    second_token = token_for_user(db, second["id"], auth_settings)
     headers = {"Authorization": f"Bearer {second_token}"}
     assert client.get("/api/me", headers=headers).json()["id"] == second["id"]
     client.cookies.set(COOKIE_NAME, first_token)
@@ -233,11 +240,18 @@ def test_bearer_fallback_and_cookie_precedence(client, registered, auth_settings
         "missing_user",
         "null_exp",
         "object_iat",
+        "missing_ver",
+        "invalid_ver",
+        "wrong_ver",
     ],
 )
-def test_invalid_tokens_return_401(client, registered, auth_settings, variation):
+def test_invalid_tokens_return_401(client, db, registered, auth_settings, variation):
     now = utc_now()
-    claims = {"sub": str(registered["id"]), "iat": now, "exp": now + timedelta(hours=1)}
+    claims = jwt.decode(
+        token_for_user(db, registered["id"], auth_settings),
+        signing_key(auth_settings),
+        algorithms=["HS256"],
+    )
     key, algorithm = signing_key(auth_settings), "HS256"
     if variation == "expired":
         claims.update(iat=now - timedelta(hours=2), exp=now - timedelta(hours=1))
@@ -261,6 +275,10 @@ def test_invalid_tokens_return_401(client, registered, auth_settings, variation)
         claims["exp"] = None
     elif variation == "object_iat":
         claims["iat"] = {}
+    elif variation == "invalid_ver":
+        claims["ver"] = []
+    elif variation == "wrong_ver":
+        claims["ver"] = "0" * 64
     token = jwt.encode(claims, key, algorithm=algorithm)
     response = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
@@ -268,10 +286,40 @@ def test_invalid_tokens_return_401(client, registered, auth_settings, variation)
 
 
 def test_deleted_user_cannot_authenticate(client, db, registered, auth_settings):
-    token = create_access_token(registered["id"], auth_settings)
+    token = token_for_user(db, registered["id"], auth_settings)
     db.delete(db.get(User, registered["id"]))
     db.commit()
     assert client.get("/api/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+
+def test_old_token_cannot_access_replacement_with_reused_sqlite_id(
+    client, db, registered, auth_settings, credentials
+):
+    token = token_for_user(db, registered["id"], auth_settings)
+    db.delete(db.get(User, registered["id"]))
+    db.commit()
+    replacement = client.post(
+        "/api/auth/register",
+        json={
+            **credentials,
+            "email": "replacement@example.test",
+            "name": "Replacement",
+            "role": "teacher",
+        },
+    ).json()
+    assert replacement["id"] == registered["id"]  # Exercise SQLite's actual ID reuse.
+    assert client.get("/api/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+    assert (
+        client.post(
+            "/api/auth/login",
+            json={
+                **credentials,
+                "email": "replacement@example.test",
+            },
+        ).status_code
+        == 200
+    )
+    assert client.get("/api/me").json()["id"] == replacement["id"]
 
 
 def test_logout_clears_cookie_without_revoking_copied_bearer(client, credentials, registered):
@@ -297,6 +345,32 @@ def test_openapi_exposes_bearer_authorize_and_protected_operations(client):
         assert "security" not in schema["paths"][path]["post"]
     for path in ("/health", "/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 200
+
+
+def test_every_private_api_operation_rejects_missing_invalid_and_expired_credentials(
+    client, db, registered, auth_settings
+):
+    valid = token_for_user(db, registered["id"], auth_settings)
+    claims = jwt.decode(valid, signing_key(auth_settings), algorithms=["HS256"])
+    now = utc_now()
+    claims.update(iat=now - timedelta(hours=2), exp=now - timedelta(hours=1))
+    expired = jwt.encode(claims, signing_key(auth_settings), algorithm="HS256")
+    paths = client.get("/openapi.json").json()["paths"]
+    public = {"/api/auth/register", "/api/auth/login"}
+    for path, operations in paths.items():
+        if not path.startswith("/api/") or path in public:
+            continue
+        for method, operation in operations.items():
+            assert operation["security"] == [{"HTTPBearer": []}]
+            url = re.sub(r"\{[^}]+\}", "1", path)
+            for token in (None, "invalid-token", expired):
+                client.cookies.clear()
+                headers = {"Authorization": f"Bearer {token}"} if token else {}
+                assert client.request(method, url, headers=headers, json={}).status_code == 401
+                if token:
+                    client.cookies.set(COOKIE_NAME, token)
+                    assert client.request(method, url, json={}).status_code == 401
+    client.cookies.clear()
 
 
 @pytest.mark.parametrize("secret", [None, "too-short"])

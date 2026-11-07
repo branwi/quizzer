@@ -9,7 +9,7 @@ from app.config import Settings, get_settings
 from app.database import get_db
 from app.schemas import UserPublic
 from app.security import COOKIE_NAME, decode_access_token
-from app.services import auth
+from app.services import access, auth
 
 DbSession = Annotated[Session, Depends(get_db)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
@@ -35,10 +35,29 @@ def get_current_user(
     if not token:
         raise unauthorized()
     try:
-        user_id = decode_access_token(token, settings)
-        return auth.current_user(db, user_id)
+        identity = decode_access_token(token, settings)
+        return auth.current_user(db, identity, settings)
     except (InvalidTokenError, auth.InvalidCredentials):
         raise unauthorized() from None
 
 
 CurrentUser = Annotated[UserPublic, Depends(get_current_user)]
+
+
+def get_teacher(user: CurrentUser) -> UserPublic:
+    try:
+        access.require_teacher(user)
+    except access.PermissionDenied:
+        raise HTTPException(status_code=403, detail="Teacher role required") from None
+    return user
+
+
+CurrentTeacher = Annotated[UserPublic, Depends(get_teacher)]
+
+
+def get_student(user: CurrentUser) -> UserPublic:
+    access.require_student(user)
+    return user
+
+
+CurrentStudent = Annotated[UserPublic, Depends(get_student)]

@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% from "macros.html" import csrf %}
+{% block content %}<div class="auth-grid">
+<section class="auth-story"><p class="eyebrow">A little curiosity goes a long way</p><h1>Better questions.<br>Brighter<br><em>possibilities.</em></h1><p>Create, share, and discover questions that turn a moment of practice into a little more understanding.</p><div class="paper-stack" aria-hidden="true"><div class="paper back"></div><div class="paper front"><span>ONE GOOD QUESTION</span><div class="paper-line"></div><div class="paper-line short"></div><div class="paper-answer"><i>✓</i><div class="paper-line"></div></div><b>✳</b></div><span class="orbit">✧</span></div><span class="story-foot">For the people who teach. And everyone who learns.</span></section>
+<section class="auth-form"><p class="eyebrow">{{ 'A fresh start' if mode == 'register' else 'Your next chapter' }}</p><h2>{{ title }}</h2><p class="muted">{{ 'Choose your role and make yourself at home.' if mode == 'register' else 'Sign in and pick up where you left off.' }}</p>
+{% if request.query_params.get('registered') %}<div class="notice success">Your account is ready. Sign in to continue.</div>{% endif %}
+{% if errors %}<div class="notice danger" role="alert">{% for error in errors %}<p>{{ error }}</p>{% endfor %}</div>{% endif %}
+<form action="/{{ mode }}" method="post">{{ csrf(csrf_token) }}
+{% if mode == 'register' %}<label>Full name<input name="name" autocomplete="name" required maxlength="120" value="{{ values.get('name', '') }}" placeholder="How should we call you?"></label>{% endif %}
+<label>Email address<input name="email" type="email" autocomplete="email" required value="{{ values.get('email', '') }}" placeholder="you@example.com"></label>
+<label>Password<input name="password" type="password" autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" required minlength="{{ 8 if mode == 'register' else 1 }}" maxlength="128" placeholder="{{ 'At least 8 characters' if mode == 'register' else 'Your password' }}"></label>
+{% if mode == 'register' %}<fieldset class="role-picker"><legend>I’m here as a</legend><label><input type="radio" name="role" value="student" {{ 'checked' if values.get('role', 'student') == 'student' }}> <span><strong>Student</strong><small>Practice & grow</small></span></label><label><input type="radio" name="role" value="teacher" {{ 'checked' if values.get('role') == 'teacher' }}> <span><strong>Teacher</strong><small>Create & guide</small></span></label></fieldset>{% endif %}
+<button class="button full" type="submit">{{ 'Create account' if mode == 'register' else 'Sign in' }} <span aria-hidden="true">→</span></button>
+</form><p class="auth-switch">{{ 'Already have an account?' if mode == 'register' else 'A new face around here?' }} <a href="{{ '/login' if mode == 'register' else '/register' }}">{{ 'Sign in' if mode == 'register' else 'Create an account' }}</a></p></section>
+</div>{% endblock %}

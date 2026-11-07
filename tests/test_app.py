@@ -30,6 +30,21 @@ def test_startup_health_and_docs(tmp_path, monkeypatch, auth_settings):
                 "/api/auth/login",
                 "/api/auth/logout",
                 "/api/me",
+                "/api/questions",
+                "/api/questions/{question_id}",
+                "/api/students",
+                "/api/quizzes",
+                "/api/quizzes/assigned",
+                "/api/quizzes/practice",
+                "/api/quizzes/{quiz_id}",
+                "/api/quizzes/{quiz_id}/publish",
+                "/api/quizzes/{quiz_id}/assignments",
+                "/api/quizzes/{quiz_id}/results",
+                "/api/quizzes/{quiz_id}/analytics",
+                "/api/quizzes/{quiz_id}/attempts",
+                "/api/attempts/{attempt_id}",
+                "/api/attempts/{attempt_id}/submit",
+                "/api/bank/questions",
             }
     finally:
         main.app.dependency_overrides.clear()

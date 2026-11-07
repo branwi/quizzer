@@ -1,0 +1,2 @@
+{% extends "base.html" %}{% from "macros.html" import heading, pages %}
+{% block content %}{{ heading('Your progress', 'Every attempt is progress.', 'Revisit your results, or pick up a question where you left it.') }}<section class="panel">{% include "partials/history_rows.html" %}{{ pages(page, '/attempts', filters) }}</section>{% endblock %}

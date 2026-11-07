@@ -149,7 +149,7 @@ def main() -> None:
     for name, count in counts.items():
         print(f"{name}: {count}")
     print("Demo accounts: " + ", ".join(DEMO_EMAILS))
-    print(f"Local demo password: {DEMO_PASSWORD} (login arrives in milestone 2)")
+    print(f"Local demo password: {DEMO_PASSWORD} (use POST /api/auth/login)")
 
 
 if __name__ == "__main__":
