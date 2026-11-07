@@ -22,8 +22,10 @@ def test_startup_health_and_docs(tmp_path, monkeypatch, auth_settings):
             assert len(inspect(engine).get_table_names()) == 7
             response = client.get("/health")
             assert response.status_code == 200
-            assert response.json() == {"status": "ok", "milestone": "authentication"}
+            assert response.json() == {"status": "ok"}
             assert client.get("/docs").status_code == 200
+            for removed in ("/login", "/dashboard", "/bank", "/static/app.js"):
+                assert client.get(removed).status_code == 404
             assert set(client.get("/openapi.json").json()["paths"]) == {
                 "/health",
                 "/api/auth/register",

@@ -1,28 +1,21 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query
 
 from app.dependencies import CurrentTeacher, CurrentUser, DbSession
-from app.routers.auth import no_store
-from app.schemas import UserPublic
+from app.schemas import PageFilters, StudentPage, UserPublic
 from app.services import quizzes
-from app.workflow_schemas import PageFilters, StudentPage
 
 router = APIRouter(tags=["users"])
 
 
 @router.get("/me", response_model=UserPublic)
-def me(user: CurrentUser, response: Response) -> UserPublic:
-    no_store(response)
+def me(user: CurrentUser) -> UserPublic:
     return user
 
 
 @router.get("/students", response_model=StudentPage)
 def students(
-    filters: Annotated[PageFilters, Query()],
-    user: CurrentTeacher,
-    db: DbSession,
-    response: Response,
+    filters: Annotated[PageFilters, Query()], user: CurrentTeacher, db: DbSession
 ) -> StudentPage:
-    no_store(response)
     return quizzes.students(db, user, filters)

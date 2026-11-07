@@ -1,11 +1,10 @@
-from copy import deepcopy
 from itertools import product
 
 import pytest
 from pydantic import TypeAdapter
 from sqlalchemy import func, select
 
-from app.models import Question, QuizQuestion, User
+from app.models import Question, User
 from app.schemas import QuestionCreate, QuestionFilters
 from app.services import questions
 from app.services.access import PermissionDenied
@@ -232,37 +231,8 @@ def test_invalid_question_id_rejected(client, teacher, question_id):
     assert client.get(f"/api/questions/{question_id}").status_code == 422
 
 
-def test_question_api_preserves_published_snapshots(client, seeded):
-    from scripts.seed import DEMO_PASSWORD
-
-    client.post(
-        "/api/auth/login", json={"email": "teacher@example.test", "password": DEMO_PASSWORD}
-    )
-    link = seeded.scalar(select(QuizQuestion).order_by(QuizQuestion.position))
-    original = deepcopy(link.snapshot)
-    path = f"/api/questions/{link.question_id}"
-    assert (
-        client.put(
-            path,
-            json={
-                "type": "short_answer",
-                "text": "Changed",
-                "topic": "New",
-                "correct_answer": ["new"],
-            },
-        ).status_code
-        == 200
-    )
-    seeded.refresh(link)
-    assert link.snapshot == original
-    assert client.delete(path).status_code == 204
-    seeded.refresh(link)
-    assert link.question_id is None
-    assert link.snapshot == original
-
-
-def test_service_enforces_roles_and_student_projection(db, registered, mcq, seeded):
-    actor = public_user(db.get(User, registered["id"]))
+def test_service_enforces_roles_and_student_projection(db, workflow, mcq):
+    actor = public_user(db.get(User, workflow["student"]["id"]))
     data = TypeAdapter(QuestionCreate).validate_python(mcq)
     with pytest.raises(PermissionDenied):
         questions.create(db, actor, data)

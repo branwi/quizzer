@@ -1,7 +1,6 @@
 from secrets import compare_digest, token_urlsafe
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -43,14 +42,7 @@ def register(db: Session, data: RegisterRequest) -> UserPublic:
         password_hash=hash_password(data.password.get_secret_value()),
     )
     db.add(user)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        # Also handle a concurrent registration winning the unique-email race.
-        if db.scalar(select(User.id).where(User.email == data.email)) is not None:
-            raise EmailAlreadyRegistered from None
-        raise
+    db.commit()
     db.refresh(user)
     return public_user(user)
 

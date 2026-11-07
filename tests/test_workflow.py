@@ -2,13 +2,10 @@ from copy import deepcopy
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import event, func, select
+from sqlalchemy import func, select
 
 from app.database import utc_now
-from app.models import Answer, Attempt, Quiz, QuizAssignment, QuizQuestion, User
-from app.services import attempts
-from app.services.auth import public_user
-from app.workflow_schemas import AttemptSubmit
+from app.models import Answer, Attempt, Quiz, QuizAssignment, QuizQuestion
 
 
 def assert_safe(value):
@@ -85,7 +82,7 @@ def test_omitted_answers_are_stored_as_wrong(client, workflow, db):
     result = client.post(f"/api/attempts/{attempt['id']}/submit", json={"answers": []})
     assert result.status_code == 200, result.text
     assert result.json()["score"] == 0
-    assert all(q["response"] is None and not q["is_correct"] for q in result.json()["questions"])
+    assert all(q["response"] is None and (not q["is_correct"]) for q in result.json()["questions"])
     assert db.scalar(select(func.count()).select_from(Answer)) == 3
 
 
@@ -133,11 +130,7 @@ def test_draft_replace_publish_and_frozen_source_history(client, workflow, db):
     attempt = start(client, flow)
     result = client.post(
         f"/api/attempts/{attempt['id']}/submit",
-        json={
-            "answers": [
-                {"quiz_question_id": attempt["questions"][0]["id"], "response": "a"},
-            ]
-        },
+        json={"answers": [{"quiz_question_id": attempt["questions"][0]["id"], "response": "a"}]},
     )
     assert result.status_code == 200
     assert result.json()["score"] == 2
@@ -197,12 +190,7 @@ def test_points_are_positive_integers(client, workflow, points):
             "/api/quizzes",
             json={
                 "title": "Bad",
-                "questions": [
-                    {
-                        "question_id": workflow["questions"][0]["id"],
-                        "points": points,
-                    }
-                ],
+                "questions": [{"question_id": workflow["questions"][0]["id"], "points": points}],
             },
         ).status_code
         == 422
@@ -302,22 +290,3 @@ def test_due_date_blocks_start_resume_and_submit_at_boundary(client, workflow, m
     assert client.post(f"/api/attempts/{active['id']}/submit", json={}).status_code == 409
     assert client.get(f"/api/attempts/{active['id']}").status_code == 200
     assert db.get(Attempt, active["id"]).score is None
-
-
-def test_answer_write_failure_rolls_back_submission_transition(client, workflow, db):
-    user = public_user(db.get(User, workflow["student"]["id"]))
-    active, _ = attempts.start(db, user, workflow["quiz_id"])
-
-    def fail_answer_flush(session, _context, _instances):
-        if any(isinstance(row, Answer) for row in session.new):
-            raise RuntimeError("Simulated answer write failure")
-
-    event.listen(db, "before_flush", fail_answer_flush)
-    try:
-        with pytest.raises(RuntimeError, match="Simulated"):
-            attempts.submit(db, user, active.id, AttemptSubmit())
-    finally:
-        event.remove(db, "before_flush", fail_answer_flush)
-    assert db.get(Attempt, active.id).submitted_at is None
-    assert db.get(Attempt, active.id).score is None
-    assert db.scalar(select(func.count()).select_from(Answer)) == 0

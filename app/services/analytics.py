@@ -1,9 +1,8 @@
 from sqlalchemy import Integer, case, cast, func, select
 from sqlalchemy.orm import Session
 
-from app.analytics_schemas import QuestionAccuracy, QuizAnalytics, ScoreBucket
 from app.models import Answer, Attempt, QuizQuestion
-from app.schemas import UserPublic
+from app.schemas import QuestionAccuracy, QuizAnalytics, ScoreBucket, UserPublic
 from app.services.quizzes import teacher_quiz
 
 

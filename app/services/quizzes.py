@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -14,17 +14,10 @@ from app.models import (
     Role,
     User,
 )
-from app.schemas import QuestionPage, UserPublic
-from app.services.access import require_student, require_teacher
-from app.services.auth import public_user
-from app.services.errors import InvalidInput, ResourceNotFound, StateConflict
-from app.services.questions import for_teacher
-from app.services.transactions import write_transaction
-from app.workflow_schemas import (
+from app.schemas import (
     AssignmentCreate,
     AssignmentResult,
     AttemptResult,
-    BankFilters,
     PageFilters,
     PracticeCreate,
     QuizCreate,
@@ -39,7 +32,11 @@ from app.workflow_schemas import (
     SnapshotForStudent,
     SnapshotForTeacher,
     StudentPage,
+    UserPublic,
 )
+from app.services.access import require_student, require_teacher
+from app.services.auth import public_user
+from app.services.errors import InvalidInput, ResourceNotFound, StateConflict
 
 
 def summary(quiz: Quiz) -> QuizSummary:
@@ -80,16 +77,13 @@ def snapshot(question: Question) -> dict:
 def student_question(link: QuizQuestion) -> QuizQuestionForStudent:
     if link.snapshot is None:
         raise StateConflict("Published quiz is missing question content")
-    # Explicit projection before returning from the service; no answer key reaches the router.
     return QuizQuestionForStudent(
         id=link.id,
         question_id=link.question_id,
         position=link.position,
         points=link.points,
         content=SnapshotForStudent(
-            type=link.snapshot["type"],
-            text=link.snapshot["text"],
-            choices=link.snapshot["choices"],
+            type=link.snapshot["type"], text=link.snapshot["text"], choices=link.snapshot["choices"]
         ),
     )
 
@@ -126,7 +120,7 @@ def _student_view(db: Session, quiz: Quiz) -> QuizForStudent:
 
 def teacher_quiz(db: Session, user: UserPublic, quiz_id: int) -> Quiz:
     require_teacher(user)
-    quiz = db.scalar(select(Quiz).where(Quiz.id == quiz_id).with_for_update())
+    quiz = db.scalar(select(Quiz).where(Quiz.id == quiz_id))
     if quiz is None or quiz.owner_id != user.id or quiz.kind != QuizKind.ASSIGNED:
         raise ResourceNotFound("Quiz not found")
     return quiz
@@ -134,7 +128,7 @@ def teacher_quiz(db: Session, user: UserPublic, quiz_id: int) -> Quiz:
 
 def eligible_quiz(db: Session, user: UserPublic, quiz_id: int) -> Quiz:
     require_student(user)
-    quiz = db.scalar(select(Quiz).where(Quiz.id == quiz_id).with_for_update())
+    quiz = db.scalar(select(Quiz).where(Quiz.id == quiz_id))
     if quiz is None:
         raise ResourceNotFound("Quiz not found")
     if quiz.kind == QuizKind.SELF_MADE:
@@ -174,96 +168,93 @@ def _replace_links(db: Session, quiz: Quiz, data: QuizCreate) -> None:
 
 def create(db: Session, user: UserPublic, data: QuizCreate) -> QuizForTeacher:
     require_teacher(user)
-    with write_transaction(db):
-        quiz = Quiz(
-            owner_id=user.id,
-            title=data.title,
-            kind=QuizKind.ASSIGNED,
-            due_at=data.due_at,
-            max_attempts=data.max_attempts,
-        )
-        db.add(quiz)
-        db.flush()
-        _replace_links(db, quiz, data)
-        db.refresh(quiz)
-        return _teacher_view(db, quiz)
+    quiz = Quiz(
+        owner_id=user.id,
+        title=data.title,
+        kind=QuizKind.ASSIGNED,
+        due_at=data.due_at,
+        max_attempts=data.max_attempts,
+    )
+    db.add(quiz)
+    db.flush()
+    _replace_links(db, quiz, data)
+    db.refresh(quiz)
+    db.commit()
+    return _teacher_view(db, quiz)
 
 
 def replace(db: Session, user: UserPublic, quiz_id: int, data: QuizCreate) -> QuizForTeacher:
-    with write_transaction(db):
-        quiz = teacher_quiz(db, user, quiz_id)
-        if quiz.status != QuizStatus.DRAFT:
-            raise StateConflict("Published quizzes cannot be edited")
-        quiz.title, quiz.due_at, quiz.max_attempts = data.title, data.due_at, data.max_attempts
-        _replace_links(db, quiz, data)
-        db.refresh(quiz)
-        return _teacher_view(db, quiz)
+    quiz = teacher_quiz(db, user, quiz_id)
+    if quiz.status != QuizStatus.DRAFT:
+        raise StateConflict("Published quizzes cannot be edited")
+    quiz.title, quiz.due_at, quiz.max_attempts = (data.title, data.due_at, data.max_attempts)
+    _replace_links(db, quiz, data)
+    db.refresh(quiz)
+    db.commit()
+    return _teacher_view(db, quiz)
 
 
 def publish(db: Session, user: UserPublic, quiz_id: int) -> QuizForTeacher:
-    with write_transaction(db):
-        quiz = teacher_quiz(db, user, quiz_id)
-        if quiz.status != QuizStatus.DRAFT:
-            raise StateConflict("Quiz is already published")
-        items = links(db, quiz.id)
-        if not items or any(item.question_id is None for item in items):
-            raise InvalidInput("Publishing requires at least one available question")
-        sources = _sources(db, user.id, [item.question_id for item in items])
-        for item in items:
-            item.snapshot = snapshot(sources[item.question_id])
-        quiz.status = QuizStatus.PUBLISHED
-        db.flush()
-        return _teacher_view(db, quiz)
+    quiz = teacher_quiz(db, user, quiz_id)
+    if quiz.status != QuizStatus.DRAFT:
+        raise StateConflict("Quiz is already published")
+    items = links(db, quiz.id)
+    if not items or any(item.question_id is None for item in items):
+        raise InvalidInput("Publishing requires at least one available question")
+    sources = _sources(db, user.id, [item.question_id for item in items])
+    for item in items:
+        item.snapshot = snapshot(sources[item.question_id])
+    quiz.status = QuizStatus.PUBLISHED
+    db.flush()
+    db.commit()
+    return _teacher_view(db, quiz)
 
 
 def assign(db: Session, user: UserPublic, quiz_id: int, data: AssignmentCreate) -> AssignmentResult:
-    with write_transaction(db):
-        quiz = teacher_quiz(db, user, quiz_id)
-        if quiz.status != QuizStatus.PUBLISHED:
-            raise StateConflict("Publish the quiz before assigning it")
-        ids = set(data.student_ids)
-        valid = set(db.scalars(select(User.id).where(User.id.in_(ids), User.role == Role.STUDENT)))
-        if ids != valid:
-            raise InvalidInput("All assignees must be registered students")
-        existing = set(
-            db.scalars(select(QuizAssignment.student_id).where(QuizAssignment.quiz_id == quiz.id))
-        )
-        db.add_all(
-            [
-                QuizAssignment(quiz_id=quiz.id, student_id=student_id)
-                for student_id in ids - existing
-            ]
-        )
-        return AssignmentResult(quiz_id=quiz.id, student_ids=sorted(existing | ids))
+    quiz = teacher_quiz(db, user, quiz_id)
+    if quiz.status != QuizStatus.PUBLISHED:
+        raise StateConflict("Publish the quiz before assigning it")
+    ids = set(data.student_ids)
+    valid = set(db.scalars(select(User.id).where(User.id.in_(ids), User.role == Role.STUDENT)))
+    if ids != valid:
+        raise InvalidInput("All assignees must be registered students")
+    existing = set(
+        db.scalars(select(QuizAssignment.student_id).where(QuizAssignment.quiz_id == quiz.id))
+    )
+    db.add_all(
+        [QuizAssignment(quiz_id=quiz.id, student_id=student_id) for student_id in ids - existing]
+    )
+    db.commit()
+    return AssignmentResult(quiz_id=quiz.id, student_ids=sorted(existing | ids))
 
 
 def practice(db: Session, user: UserPublic, data: PracticeCreate) -> QuizForStudent:
     require_student(user)
-    with write_transaction(db):
-        sources = _sources(db, user.id, data.question_ids, public_only=True)
-        quiz = Quiz(
-            owner_id=user.id,
-            title=data.title,
-            kind=QuizKind.SELF_MADE,
-            status=QuizStatus.PUBLISHED,
-            max_attempts=None,
-        )
-        db.add(quiz)
-        db.flush()
-        db.add_all(
-            [
-                QuizQuestion(
-                    quiz_id=quiz.id,
-                    question_id=qid,
-                    position=position,
-                    points=1,
-                    snapshot=snapshot(sources[qid]),
-                )
-                for position, qid in enumerate(data.question_ids)
-            ]
-        )
-        db.flush()
-        return _student_view(db, quiz)
+    sources = _sources(db, user.id, data.question_ids, public_only=True)
+    quiz = Quiz(
+        owner_id=user.id,
+        title=data.title,
+        kind=QuizKind.SELF_MADE,
+        status=QuizStatus.PUBLISHED,
+        max_attempts=None,
+    )
+    db.add(quiz)
+    db.flush()
+    db.add_all(
+        [
+            QuizQuestion(
+                quiz_id=quiz.id,
+                question_id=qid,
+                position=position,
+                points=1,
+                snapshot=snapshot(sources[qid]),
+            )
+            for position, qid in enumerate(data.question_ids)
+        ]
+    )
+    db.flush()
+    db.commit()
+    return _student_view(db, quiz)
 
 
 def get(db: Session, user: UserPublic, quiz_id: int) -> QuizView:
@@ -315,61 +306,6 @@ def students(db: Session, user: UserPublic, filters: PageFilters) -> StudentPage
         page=filters.page,
         page_size=filters.page_size,
     )
-
-
-def assignment_ids(db: Session, user: UserPublic, quiz_id: int) -> AssignmentResult:
-    teacher_quiz(db, user, quiz_id)
-    return AssignmentResult(
-        quiz_id=quiz_id,
-        student_ids=list(
-            db.scalars(
-                select(QuizAssignment.student_id)
-                .where(QuizAssignment.quiz_id == quiz_id)
-                .order_by(QuizAssignment.student_id)
-            )
-        ),
-    )
-
-
-def available_questions(db: Session, user: UserPublic, filters: BankFilters) -> QuestionPage:
-    require_teacher(user)
-    conditions = [or_(Question.author_id == user.id, Question.is_public.is_(True))]
-    if filters.q:
-        conditions.append(
-            or_(
-                Question.text.icontains(filters.q, autoescape=True),
-                Question.topic.icontains(filters.q, autoescape=True),
-            )
-        )
-    if filters.topic:
-        conditions.append(Question.topic == filters.topic)
-    if filters.type is not None:
-        conditions.append(Question.type == filters.type)
-    total = db.scalar(select(func.count()).select_from(Question).where(*conditions))
-    rows = db.scalars(
-        select(Question)
-        .where(*conditions)
-        .order_by(Question.created_at.desc(), Question.id.desc())
-        .offset((filters.page - 1) * filters.page_size)
-        .limit(filters.page_size)
-    )
-    return QuestionPage(
-        items=[for_teacher(q) for q in rows],
-        total=total,
-        page=filters.page,
-        page_size=filters.page_size,
-    )
-
-
-def selection_labels(db: Session, user: UserPublic, ids: list[int]) -> dict[str, str]:
-    require_teacher(user)
-    rows = db.execute(
-        select(Question.id, Question.text).where(
-            Question.id.in_(ids),
-            or_(Question.author_id == user.id, Question.is_public.is_(True)),
-        )
-    )
-    return {str(qid): text[:160] for qid, text in rows}
 
 
 def results(db: Session, user: UserPublic, quiz_id: int, filters: PageFilters) -> ResultPage:

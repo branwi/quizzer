@@ -9,18 +9,12 @@ public_router = APIRouter(prefix="/auth", tags=["auth"])
 private_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def no_store(response: Response) -> None:
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["Pragma"] = "no-cache"
-
-
 @public_router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-def register(data: RegisterRequest, db: DbSession, response: Response) -> UserPublic:
+def register(data: RegisterRequest, db: DbSession) -> UserPublic:
     try:
         user = auth.register(db, data)
     except auth.EmailAlreadyRegistered:
         raise HTTPException(status_code=409, detail="Email already registered") from None
-    no_store(response)
     return user
 
 
@@ -41,7 +35,6 @@ def login(
         secure=settings.cookie_secure,
         samesite="lax",
     )
-    no_store(response)
     return result
 
 
@@ -51,5 +44,4 @@ def logout(settings: AppSettings) -> Response:
     response.delete_cookie(
         key=COOKIE_NAME, path="/", httponly=True, secure=settings.cookie_secure, samesite="lax"
     )
-    no_store(response)
     return response

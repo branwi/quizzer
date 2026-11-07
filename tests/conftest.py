@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app import main
 from app.config import Settings, get_settings
 from app.database import create_tables, get_db, make_engine
-from scripts.seed import seed
 
 
 @pytest.fixture
@@ -20,13 +19,6 @@ def engine():
 def db(engine):
     with Session(engine, expire_on_commit=False) as session:
         yield session
-
-
-@pytest.fixture
-def seeded(db):
-    with db.begin():
-        seed(db)
-    return db
 
 
 @pytest.fixture
@@ -66,12 +58,7 @@ def credentials():
 @pytest.fixture
 def registered(client, credentials):
     response = client.post(
-        "/api/auth/register",
-        json={
-            **credentials,
-            "name": "Test Student",
-            "role": "student",
-        },
+        "/api/auth/register", json={**credentials, "name": "Test Student", "role": "student"}
     )
     assert response.status_code == 201
     return response.json()
@@ -81,12 +68,7 @@ def registered(client, credentials):
 def teacher(client):
     credentials = {"email": "teacher@example.test", "password": "teacher-test-password"}
     response = client.post(
-        "/api/auth/register",
-        json={
-            **credentials,
-            "name": "Test Teacher",
-            "role": "teacher",
-        },
+        "/api/auth/register", json={**credentials, "name": "Test Teacher", "role": "teacher"}
     )
     assert response.status_code == 201
     assert client.post("/api/auth/login", json=credentials).status_code == 200
@@ -144,10 +126,7 @@ def workflow(client, teacher, registered, credentials, mcq):
     published = client.post(f"/api/quizzes/{quiz_id}/publish")
     assert published.status_code == 200, published.text
     assigned = client.post(
-        f"/api/quizzes/{quiz_id}/assignments",
-        json={
-            "student_ids": [registered["id"]],
-        },
+        f"/api/quizzes/{quiz_id}/assignments", json={"student_ids": [registered["id"]]}
     )
     assert assigned.status_code == 200, assigned.text
     assert client.post("/api/auth/login", json=credentials).status_code == 200

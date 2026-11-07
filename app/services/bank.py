@@ -2,9 +2,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Question, Role
-from app.schemas import UserPublic
+from app.schemas import BankFilters, BankPage, StudentBankPage, TeacherBankPage, UserPublic
 from app.services.questions import for_student, for_teacher
-from app.workflow_schemas import BankFilters, BankPage, StudentBankPage, TeacherBankPage
 
 
 def search(db: Session, user: UserPublic, filters: BankFilters) -> BankPage:
