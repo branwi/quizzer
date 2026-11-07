@@ -6,9 +6,10 @@ from app import main
 from app.database import create_tables, get_db, make_engine
 
 
-def test_startup_health_and_docs(tmp_path, monkeypatch):
+def test_startup_health_and_docs(tmp_path, monkeypatch, auth_settings):
     engine = make_engine(f"sqlite:///{(tmp_path / 'startup.db').as_posix()}")
     monkeypatch.setattr(main, "create_tables", lambda: create_tables(engine))
+    monkeypatch.setattr(main, "get_settings", lambda: auth_settings)
 
     def override_db():
         with Session(engine) as db:
@@ -21,9 +22,15 @@ def test_startup_health_and_docs(tmp_path, monkeypatch):
             assert len(inspect(engine).get_table_names()) == 7
             response = client.get("/health")
             assert response.status_code == 200
-            assert response.json() == {"status": "ok", "milestone": "foundations"}
+            assert response.json() == {"status": "ok", "milestone": "authentication"}
             assert client.get("/docs").status_code == 200
-            assert set(client.get("/openapi.json").json()["paths"]) == {"/health"}
+            assert set(client.get("/openapi.json").json()["paths"]) == {
+                "/health",
+                "/api/auth/register",
+                "/api/auth/login",
+                "/api/auth/logout",
+                "/api/me",
+            }
     finally:
         main.app.dependency_overrides.clear()
         engine.dispose()

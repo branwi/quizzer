@@ -33,6 +33,12 @@ click==8.5.1
     #   uvicorn
 colorama==0.4.6
     # via pytest
+dnspython==2.9.2
+    # via
+    #   -r requirements.txt
+    #   email-validator
+email-validator==2.3.0
+    # via -r requirements.txt
 fastapi==0.162.2
     # via -r requirements.txt
 greenlet==3.5.6
@@ -52,6 +58,7 @@ idna==3.20
     # via
     #   -r requirements.txt
     #   anyio
+    #   email-validator
     #   httpx
 iniconfig==2.3.1
     # via pytest
@@ -82,6 +89,8 @@ pydantic-settings==2.16.2
     # via -r requirements.txt
 pygments==2.21.0
     # via pytest
+pyjwt==2.15.1
+    # via -r requirements.txt
 pytest==9.2.0
     # via -r requirements-dev.in
 python-dotenv==1.2.4

@@ -1,0 +1,64 @@
+from secrets import token_urlsafe
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.models import User
+from app.schemas import LoginRequest, RegisterRequest, UserPublic
+from app.security import hash_password, verify_password
+
+# Unknown accounts still take the expensive password-verification path.
+_DUMMY_PASSWORD_HASH = hash_password(token_urlsafe(32))
+
+
+class InvalidCredentials(Exception):
+    pass
+
+
+class EmailAlreadyRegistered(Exception):
+    pass
+
+
+def public_user(user: User) -> UserPublic:
+    return UserPublic(
+        id=user.id, name=user.name, email=user.email, role=user.role, created_at=user.created_at
+    )
+
+
+def register(db: Session, data: RegisterRequest) -> UserPublic:
+    if db.scalar(select(User.id).where(User.email == data.email)) is not None:
+        raise EmailAlreadyRegistered
+    user = User(
+        name=data.name,
+        email=data.email,
+        role=data.role,
+        password_hash=hash_password(data.password.get_secret_value()),
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Also handle a concurrent registration winning the unique-email race.
+        if db.scalar(select(User.id).where(User.email == data.email)) is not None:
+            raise EmailAlreadyRegistered from None
+        raise
+    db.refresh(user)
+    return public_user(user)
+
+
+def authenticate(db: Session, data: LoginRequest) -> UserPublic:
+    user = db.scalar(select(User).where(User.email == data.email))
+    hashed = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
+    valid = verify_password(data.password.get_secret_value(), hashed)
+    if user is None or not valid:
+        raise InvalidCredentials
+    return public_user(user)
+
+
+def current_user(db: Session, user_id: int) -> UserPublic:
+    user = db.get(User, user_id)
+    if user is None:
+        raise InvalidCredentials
+    return public_user(user)

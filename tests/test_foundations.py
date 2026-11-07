@@ -246,4 +246,4 @@ def test_environment_configuration(monkeypatch):
     settings = Settings(_env_file=None)
     assert settings.database_url == "sqlite:///override.db"
     assert settings.access_token_minutes == 15
-    assert settings.secret_key == "a-test-secret"
+    assert settings.secret_key.get_secret_value() == "a-test-secret"
