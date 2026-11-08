@@ -23,13 +23,7 @@ def db(engine):
 
 @pytest.fixture
 def auth_settings():
-    return Settings(
-        _env_file=None,
-        database_url="sqlite:///:memory:",
-        secret_key="test-only-signing-secret-" + "x" * 40,
-        access_token_minutes=60,
-        cookie_secure=False,
-    )
+    return Settings(_env_file=None, secret_key="test-signing-secret-" + "x" * 40)
 
 
 @pytest.fixture
@@ -51,28 +45,22 @@ def client(engine, auth_settings, monkeypatch):
 
 
 @pytest.fixture
-def credentials():
-    return {"email": "student@example.test", "password": "a-long-test-password"}
+def teacher_profile():
+    return {"first_name": "brian", "grade": 12}
 
 
 @pytest.fixture
-def registered(client, credentials):
-    response = client.post(
-        "/api/auth/register", json={**credentials, "name": "Test Student", "role": "student"}
-    )
-    assert response.status_code == 201
-    return response.json()
+def teacher(client, teacher_profile):
+    response = client.post("/api/auth/login", json=teacher_profile)
+    assert response.status_code == 200, response.text
+    return response.json()["user"]
 
 
 @pytest.fixture
-def teacher(client):
-    credentials = {"email": "teacher@example.test", "password": "teacher-test-password"}
-    response = client.post(
-        "/api/auth/register", json={**credentials, "name": "Test Teacher", "role": "teacher"}
-    )
-    assert response.status_code == 201
-    assert client.post("/api/auth/login", json=credentials).status_code == 200
-    return response.json()
+def student(client):
+    response = client.post("/api/auth/login", json={"first_name": "Maya", "grade": 6})
+    assert response.status_code == 200, response.text
+    return response.json()["user"]
 
 
 @pytest.fixture
@@ -88,58 +76,14 @@ def mcq():
 
 
 @pytest.fixture
-def workflow(client, teacher, registered, credentials, mcq):
-    payloads = [
-        {**mcq, "is_public": True},
-        {
-            "type": "true_false",
-            "text": "Two is even.",
-            "topic": "Math",
-            "correct_answer": True,
-            "explanation": "Two divides evenly by two.",
-            "is_public": True,
-        },
-        {
-            "type": "short_answer",
-            "text": "What is 2 + 2?",
-            "topic": "Math",
-            "correct_answer": ["4", "four"],
-            "explanation": "Four.",
-            "is_public": False,
-        },
-    ]
-    questions = []
-    for payload in payloads:
-        response = client.post("/api/questions", json=payload)
-        assert response.status_code == 201, response.text
-        questions.append(response.json())
-    data = {
-        "title": "Weighted quiz",
-        "questions": [
-            {"question_id": question["id"], "points": weight}
-            for question, weight in zip(questions, (2, 3, 5), strict=True)
-        ],
-    }
-    draft = client.post("/api/quizzes", json=data)
-    assert draft.status_code == 201, draft.text
-    quiz_id = draft.json()["id"]
-    published = client.post(f"/api/quizzes/{quiz_id}/publish")
-    assert published.status_code == 200, published.text
-    assigned = client.post(
-        f"/api/quizzes/{quiz_id}/assignments", json={"student_ids": [registered["id"]]}
+def assigned(client, teacher, student, teacher_profile, mcq):
+    client.post("/api/auth/login", json=teacher_profile)
+    response = client.post("/api/questions", json=mcq)
+    assert response.status_code == 201, response.text
+    question = response.json()
+    response = client.post(
+        "/api/assignments", json={"student_ids": [student["id"]], "question_ids": [question["id"]]}
     )
-    assert assigned.status_code == 200, assigned.text
-    assert client.post("/api/auth/login", json=credentials).status_code == 200
-    return {
-        "quiz": published.json(),
-        "quiz_id": quiz_id,
-        "questions": questions,
-        "payload": data,
-        "student": registered,
-        "student_credentials": credentials,
-        "teacher": teacher,
-        "teacher_credentials": {
-            "email": "teacher@example.test",
-            "password": "teacher-test-password",
-        },
-    }
+    assert response.status_code == 200, response.text
+    client.post("/api/auth/login", json={"first_name": "Maya", "grade": 6})
+    return {"student": student, "teacher": teacher, "question": question}

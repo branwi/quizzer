@@ -1,47 +1,35 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Response
 
-from app.dependencies import AppSettings, DbSession, unauthorized
-from app.schemas import LoginRequest, LoginResponse, RegisterRequest, UserPublic
-from app.security import COOKIE_NAME
+from app.dependencies import AppSettings, DbSession
+from app.schemas import LoginRequest, LoginResponse, UserPublic
+from app.security import COOKIE_NAME, create_access_token
 from app.services import auth
 
-public_router = APIRouter(prefix="/auth", tags=["auth"])
-private_router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["login"])
 
 
-@public_router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-def register(data: RegisterRequest, db: DbSession) -> UserPublic:
-    try:
-        user = auth.register(db, data)
-    except auth.EmailAlreadyRegistered:
-        raise HTTPException(status_code=409, detail="Email already registered") from None
-    return user
-
-
-@public_router.post("/login", response_model=LoginResponse)
-def login(
-    data: LoginRequest, db: DbSession, settings: AppSettings, response: Response
-) -> LoginResponse:
-    try:
-        result = auth.authenticate(db, data, settings)
-    except auth.InvalidCredentials:
-        raise unauthorized("Invalid email or password") from None
+@router.post("/login", response_model=LoginResponse)
+def login(data: LoginRequest, response: Response, db: DbSession, settings: AppSettings):
+    user = auth.login(db, data)
+    token = create_access_token(user.id, settings)
+    expires_in = settings.access_token_minutes * 60
     response.set_cookie(
-        key=COOKIE_NAME,
-        value=result.access_token,
-        max_age=result.expires_in,
-        path="/",
+        COOKIE_NAME,
+        token,
+        max_age=expires_in,
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
     )
-    return result
+    return LoginResponse(
+        user=UserPublic.model_validate(user), access_token=token, expires_in=expires_in
+    )
 
 
-@private_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/logout", status_code=204)
 def logout(settings: AppSettings) -> Response:
-    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response = Response(status_code=204)
     response.delete_cookie(
-        key=COOKIE_NAME, path="/", httponly=True, secure=settings.cookie_secure, samesite="lax"
+        COOKIE_NAME, httponly=True, secure=settings.cookie_secure, samesite="lax"
     )
     return response

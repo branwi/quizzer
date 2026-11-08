@@ -52,19 +52,19 @@ def test_true_false_never_coerces_numbers_or_strings(key, response):
     ],
 )
 def test_short_answer_whitespace_case_and_aliases(response, expected):
-    snapshot = {"type": "short_answer", "correct_answer": ["New York", "NYC", "Straße"]}
-    assert grade(snapshot, response) is expected
+    question = {"type": "short_answer", "correct_answer": ["New York", "NYC", "Straße"]}
+    assert grade(question, response) is expected
 
 
-def test_grading_does_not_mutate_snapshot():
-    snapshot = {"type": "short_answer", "correct_answer": ["FOUR"], "explanation": "Keep me"}
-    original = deepcopy(snapshot)
-    assert grade(snapshot, "four") is True
-    assert snapshot == original
+def test_grading_does_not_mutate_question():
+    question = {"type": "short_answer", "correct_answer": ["FOUR"], "explanation": "Keep me"}
+    original = deepcopy(question)
+    assert grade(question, "four") is True
+    assert question == original
     assert normalize("  Hello\t WORLD\n") == "hello world"
 
 
-@pytest.mark.parametrize("snapshot", [{"type": "essay"}, {}])
-def test_unsupported_question_type_fails_explicitly(snapshot):
+@pytest.mark.parametrize("question", [{"type": "essay"}, {}])
+def test_unsupported_question_type_fails_explicitly(question):
     with pytest.raises(ValueError, match="question type"):
-        grade(snapshot, "answer")
+        grade(question, "answer")

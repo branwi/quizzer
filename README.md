@@ -1,10 +1,14 @@
-# Quiz API
+# Problem Bank API
 
-A small FastAPI application for teachers to create and assign quizzes, and for
-students to answer them and get automatic feedback. It uses SQLite and has one
-interface: a JSON API, which you can try through FastAPI's interactive `/docs`.
+Everyone uses the same login: first name and grade. `brian` with grade `12` gets
+teacher access; all other name/grade pairs get student access. Students browse a
+problem bank, see assigned problems, and check answers immediately. The teacher
+manages the bank and assignments.
 
-## Run locally
+There are no quizzes, attempts, saved answers, scores, or analytics. The interface
+is a JSON API with an interactive client at `/docs`.
+
+## Run
 
 Use Python 3.11 or newer. In PowerShell, from this folder:
 
@@ -13,92 +17,111 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 ```
 
-If you do not already have `.env`, copy the example:
+If `.env` does not exist, copy `.env.example` to `.env`. Generate a secret:
 
 ```powershell
-Copy-Item .env.example .env
 .venv\Scripts\python.exe -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Put the generated value in `.env` as `SECRET_KEY=your-generated-value`.
-Keep an existing secret if you already configured one. Then start the server:
+Put it in `.env` as `SECRET_KEY=your-generated-value`. Keep an existing secret
+if one is already configured. The database setting should be
+`DATABASE_URL=sqlite:///./problems.db`.
+
+Start the server:
 
 ```powershell
 .venv\Scripts\python.exe -m uvicorn app.main:app --reload
 ```
 
 Open **http://127.0.0.1:8000/docs**. Expand an endpoint, click **Try it out**,
-edit the JSON, and click **Execute**. `/health` checks that the app can query the
-database. There is no separate home page or dashboard.
+edit the JSON, then click **Execute**. Login sets a cookie, so later requests from
+that page use the selected account. A separate client can use the returned
+`access_token` in an `Authorization: Bearer <token>` header instead.
 
-Startup calls SQLAlchemy's `create_all()` to create missing tables. Existing
-records stay in place. It does **not** alter existing tables: an older database
-can still have the old constraints and migration bookkeeping table. To try the
-lighter schema without touching that data, set
-`DATABASE_URL=sqlite:///./quizzer-simple.db` in `.env` and restart.
+## Try the complete flow
 
-## Try a complete quiz
-
-1. Use `POST /api/auth/register` twice, once for each role. Save the returned
-   student ID. Example registration:
+1. Log in as the teacher using `POST /api/auth/login`:
 
    ```json
-   {"name":"Teacher","email":"teacher@example.test","password":"long-demo-password","role":"teacher"}
+   {"first_name":"brian","grade":12}
    ```
 
-   For the student, change the name, email, and role to `student`.
-2. Use `POST /api/auth/login` with the teacher email and password. Login sets a
-   cookie, so subsequent calls from `/docs` are authenticated automatically.
-3. Create a question with `POST /api/questions`:
+   The response includes `user.role: "teacher"`. There is no separate registration
+   or teacher login. A website can use this role to show the appropriate controls
+   after a single shared login form.
+2. Log in as a student with `POST /api/auth/login`:
 
    ```json
-   {"type":"true_false","text":"Two is even.","topic":"Math","correct_answer":true,"explanation":"Two divides evenly by two.","is_public":true}
+   {"first_name":"Maya","grade":6}
    ```
 
-4. Create a draft with `POST /api/quizzes`, replacing `1` with the question ID:
+   Save the returned `user.id`. The first login creates a profile; later logins
+   with the same name and grade reopen it. `GET /api/me` shows the current profile.
+3. Switch back to the teacher using the same `POST /api/auth/login`:
 
    ```json
-   {"title":"Math quiz","questions":[{"question_id":1,"points":2}]}
+   {"first_name":"brian","grade":12}
    ```
 
-5. Publish it with `POST /api/quizzes/{quiz_id}/publish`. Assign it with
-   `POST /api/quizzes/{quiz_id}/assignments`, using `{"student_ids":[1]}` with
-   your actual student ID.
-6. Log in as the student. List assignments with `GET /api/quizzes/assigned`,
-   then call `POST /api/quizzes/{quiz_id}/attempts`. Save the attempt ID and the
-   returned `questions[0].id` (the quiz question ID).
-7. Call `POST /api/attempts/{attempt_id}/submit`:
+4. Create a bank question with `POST /api/questions`:
 
    ```json
-   {"answers":[{"quiz_question_id":1,"response":true}]}
+   {"type":"true_false","text":"Two is even.","topic":"Math","correct_answer":true,"explanation":"Two divides evenly by two."}
    ```
 
-   Replace `1` with the quiz question ID from the attempt. The response includes
-   the score, correct answer, and explanation. `GET /api/attempts/{attempt_id}`
-   shows that review again.
-8. Log back in as the teacher. View `/api/quizzes/{quiz_id}/results` and
-   `/api/quizzes/{quiz_id}/analytics`.
+5. Assign bank questions directly using `POST /api/assignments`:
 
-Teachers can also edit and delete their questions. Both roles can search
-`GET /api/bank/questions`; students can build practice quizzes with
-`POST /api/quizzes/practice` and `{"question_ids":[1]}`. Practice uses the same
-attempt and grading endpoints. Multiple choice uses a choice ID as its response;
-short answer uses a string. See `/docs` for the complete request formats.
+   ```json
+   {"student_ids":[1],"question_ids":[1]}
+   ```
 
-For a separate API client, send the login response's `access_token` as
-`Authorization: Bearer <token>`. Logout clears the cookie; a copied bearer token
-remains valid until it expires.
+   Replace the IDs with the actual student and question IDs. Every selected
+   student gets every selected question. Repeating an assignment adds no duplicates.
+   `GET /api/students` lists student profiles.
+6. Log back in as Maya. `GET /api/assignments` returns her flat list of questions.
+   `GET /api/bank/questions` returns the whole bank. Neither includes answer keys.
+7. Use `POST /api/bank/questions/{question_id}/check`:
 
-## Check the code
+   ```json
+   {"response":true}
+   ```
+
+   It returns correctness, the accepted answer, and explanation. Nothing is saved;
+   the student can try again. Multiple choice uses a choice ID string, short answer
+   uses a string, and true/false uses a JSON boolean.
+
+Teachers use `/api/questions` to list, edit, and delete shared bank questions.
+They can inspect a student's list with `GET /api/assignments/{student_id}` and
+remove a problem with `DELETE /api/assignments/{student_id}/{question_id}`.
+Bank search supports `q`, `topic`, and `type` query parameters.
+
+## Behavior to know
+
+* First name and grade select a profile; they do not verify identity.
+  People sharing the same name and grade share a profile. Matching ignores
+  capitalization and surrounding spaces. A different grade selects a different
+  profile. Grades are labels such as `"6"`, `"K"`, or `"college"`; `6` also works.
+* The pair `brian` / `12` gets teacher access regardless of capitalization:
+  `Brian` and `BRIAN` work too. `brian` / `11` gets student access. Change `TEACHER_PROFILE` in
+  `app/services/auth.py` to change this rule. Anyone entering the teacher pair
+  gets teacher access; this is intended for the local demo.
+* All bank questions are shared. All teachers can manage them. Editing a question
+  updates it in assigned lists; deleting it removes its assignments.
+* Checking an answer does not mark a problem complete or remove it from the list.
+* Logout clears the cookie. A copied bearer token lasts until its expiry.
+* Startup uses `create_all()` to create missing tables. It does not convert older
+  schemas. The former `quizapp.db` is retained separately; old quiz/attempt history
+  is not used. Student profiles need a name and grade and must be assigned anew.
+
+This is a local learning application. Keep `.env`, `.venv`, and database files out
+of Git; `.gitignore` excludes them.
+
+## Checks
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q
-.venv\Scripts\ruff.exe check app tests
-.venv\Scripts\ruff.exe format --check app tests
+.venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+.venv\Scripts\ruff.exe check --no-cache app tests
+.venv\Scripts\ruff.exe format --check --no-cache app tests
 ```
 
-Tests use isolated databases. Read [ARCHITECTURE.md](ARCHITECTURE.md) for the code
-map and behavior. This version is intended for local learning and demonstrations:
-it has no custom concurrency coordination or CSRF protection. Registration allows
-either role. Keep `.env`, `.venv`, and database files out of Git; `.gitignore`
-already excludes them.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) for the code map.

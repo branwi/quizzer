@@ -1,140 +1,120 @@
-# How the Quiz API works
+# How the problem bank works
 
-The application has one JSON API, built with FastAPI. SQLAlchemy reads and writes
-a SQLite file. Pydantic checks request data and defines response shapes. There is
-no separate frontend, template system, migration tool, or deployment framework.
-FastAPI's `/docs` page is an interactive client for that same API.
+The application is a FastAPI JSON API backed by SQLite. Pydantic validates JSON;
+SQLAlchemy stores records. `/docs` lets you call the API without a separate frontend.
 
-## Follow one request
+The flow is **request → router → service → database → response**.
 
-For `POST /api/attempts/{attempt_id}/submit`:
+## Three tables
 
-1. FastAPI reads JSON into `AttemptSubmit` in `app/schemas.py`.
-2. Dependencies in `app/dependencies.py` load the logged-in student and open a
-   database session. The router in `app/routers/attempts.py` calls the service.
-3. `app/services/attempts.py` checks ownership, deadline, submission state, and
-   question IDs. It calls `grade()` for each published question.
-4. The service creates answer rows, totals the points, marks the attempt submitted,
-   and calls `db.commit()`. Its response contains the completed review.
-
-Routers handle HTTP; services handle quiz rules; models describe stored data;
-schemas describe incoming and outgoing JSON. Closing a session rolls back any
-unfinished changes after an error. There is no custom transaction manager or
-locking layer.
-
-## Code map and reading order
-
-| File | What to explain |
+| Model/table | Stored information |
 | --- | --- |
-| `app/main.py` | Startup, router registration, and JSON error responses |
-| `app/config.py` | Settings from `.env` and environment variables |
-| `app/database.py` | Engine, sessions, `create_all()`, and UTC timestamps |
-| `app/models.py` | Seven database tables and enum values |
-| `app/schemas.py` | Request validation and response fields |
-| `app/security.py` | Password hashing and signed login tokens |
-| `app/dependencies.py` | Current user and teacher/student checks |
-| `app/routers/` | URLs and calls into services |
-| `app/services/auth.py` | Registration, login, and public user fields |
-| `app/services/questions.py` | Question CRUD and ownership |
-| `app/services/quizzes.py` | Drafts, snapshots, assignments, practice, results |
-| `app/services/attempts.py` | Starting, submitting, and reviewing attempts |
+| `User` / `profiles` | ID, first name, grade, and role |
+| `Question` / `problems` | Type, text, topic, choices, correct answer, explanation |
+| `AssignedProblem` / `assigned_problems` | A student ID and a bank question ID |
+
+Both roles use first name and grade. There are no emails or passwords. IDs and
+roles are assigned by the server. Each name/grade pair is unique across both
+roles. Foreign keys prevent assignments to missing records, and the pair of
+student/question IDs prevents duplicate assignments.
+
+Assignments reference the original bank questions. There are no quiz containers,
+publication steps, snapshots, deadlines, points, attempts, or stored responses.
+Editing a bank question changes what assigned students see. Deleting a question
+also deletes its assignment links through the foreign key's `ON DELETE CASCADE`.
+
+`database.py` creates the engine and one session per request. Services call
+`db.commit()` when writing. Closing the session rolls back unfinished changes.
+Startup runs `Base.metadata.create_all()`; there is no migration framework.
+
+## Login and permissions
+
+`POST /api/auth/login` is the only login endpoint for both roles. It accepts
+`first_name` and `grade`, looks up that pair ignoring capitalization, and creates
+a profile if needed. Names and grade labels are trimmed. An integer grade becomes
+its string label. Python's `casefold()` is also registered as a SQLite function so
+the lookup handles Unicode names consistently. Stored spelling stays unchanged.
+
+`TEACHER_PROFILE = ("brian", "12")` in `services/auth.py` defines the teacher pair.
+That pair gets the stored teacher role; all other pairs get the student role.
+The login response includes `user.role`, so a future website needs only one login
+form and can show the appropriate controls afterward. There is no role selector
+or separate registration. Anyone entering the teacher pair gets teacher access;
+this local profile selector does not prove identity.
+
+Login returns an expiring signed JWT and sets an HTTP-only cookie. Requests
+can use the cookie or a bearer header; a nonempty cookie takes priority. Tokens
+contain the user ID, expiry, and an audience marking this version of the app.
+Older quiz app tokens are rejected. SQLite assigns profile IDs without reusing
+deleted IDs, so an old token cannot select a replacement profile.
+
+`dependencies.py` loads the user from the token. `get_teacher` and `get_student`
+check the stored role. Login assigns the role from the configured name/grade pair;
+it rejects a supplied `role` field.
+Logout clears the cookie; there is no token revocation list.
+
+| Action | Access |
+| --- | --- |
+| Browse bank | Any logged-in user |
+| Create, edit, delete questions; view answer keys | Teachers |
+| List students, assign/unassign problems, inspect student lists | Teachers |
+| View own assigned problems, check individual answers | Students |
+
+The bank is shared among all teachers. There are no private questions or author
+ownership rules. Student response schemas omit correct answers and explanations
+until they explicitly check an answer.
+
+## Follow an assignment
+
+1. A teacher posts `student_ids` and `question_ids` to `/api/assignments`.
+2. The service verifies that every selected profile is a student and every
+   selected question exists before adding any assignment links.
+3. It adds each missing student/question pair and commits. Repeating the request
+   leaves existing pairs alone.
+4. A student calls `GET /api/assignments`. The service joins their links to bank
+   questions and returns a flat array, ordered by question ID.
+
+The teacher can inspect `/api/assignments/{student_id}` and remove individual
+links. There is no attempt to start, quiz to submit, or completion state to track.
+
+## Follow an answer check
+
+1. A student posts `{"response":true}` to `/api/bank/questions/{question_id}/check`.
+2. The service loads that bank question and validates the response type.
+3. `grading.py` compares the response against the stored accepted answer.
+4. The response includes `is_correct`, `correct_answer`, and `explanation`.
+   No database write occurs.
+
+Multiple choice compares choice IDs exactly. True/false requires JSON booleans.
+Short answer folds case and collapses whitespace before comparing against its
+accepted strings. Missing or null responses are incorrect. The student can check
+any bank question repeatedly; assignments and feedback have no saved score or history.
+
+## Reading order
+
+| File | Purpose |
+| --- | --- |
+| `app/main.py` | Startup, router registration, JSON errors, health check |
+| `app/config.py` | Database URL, signing secret, token lifetime, cookie setting |
+| `app/models.py` | The three tables and their links |
+| `app/schemas.py` | Login, question, assignment, and feedback JSON shapes |
+| `app/database.py` | Engine, table creation, request sessions |
+| `app/security.py` | Signed login tokens |
+| `app/dependencies.py` | Current user and role checks |
+| `app/routers/auth.py`, `users.py` | Shared login/logout, current user, student list |
+| `app/routers/questions.py`, `bank.py` | Teacher CRUD and student bank/check endpoints |
+| `app/routers/assignments.py` | Assign, list, and remove bank problems |
+| `app/services/auth.py` | Profile lookup/creation and the teacher name/grade rule |
+| `app/services/questions.py` | Bank queries, CRUD, response validation |
+| `app/services/assignments.py` | Validate selected IDs and store links |
 | `app/services/grading.py` | Pure answer comparison functions |
-| `app/services/bank.py` | Public question search |
-| `app/services/analytics.py` | Counts, percentages, and score distribution |
-| `app/services/access.py`, `errors.py` | Shared permission checks and service errors |
+| `app/services/errors.py` | Expected not-found, conflict, and invalid-input errors |
 
-The matching files under `tests/` demonstrate each feature with small examples.
+The tests cover the complete teacher/student flow, role boundaries, hidden answer
+keys, input validation, repeatable answer checks without writes, assignment
+updates/deletions, token expiry, and database persistence. They use isolated databases.
 
-## Seven tables
-
-| Table | Purpose |
-| --- | --- |
-| `users` | Name, normalized email, password hash, teacher/student role |
-| `questions` | Reusable question content, answers, topic, visibility, author |
-| `quizzes` | Owner, title, kind, draft/published state, deadline, attempt limit |
-| `quiz_assignments` | Connects an assigned quiz to each student |
-| `quiz_questions` | Ordered question links, points, and published snapshots |
-| `attempts` | Student, quiz, start/submission timestamps, score and maximum |
-| `answers` | Response, correctness, and points for one attempt question |
-
-`answers.quiz_id` also records the quiz; keeping it makes existing local databases
-usable. Services ensure each answer belongs to its attempt's quiz.
-
-The database keeps primary keys, foreign keys, unique user emails, a unique answer
-per attempt/question, the assignment's composite primary key, and one check that
-question points are positive. Other validation lives in schemas and services.
-SQLite foreign keys are enabled when a connection opens. If a source question is
-deleted, its quiz links become null while published snapshots remain available.
-
-Startup uses `Base.metadata.create_all()`. It creates missing tables and leaves
-existing tables and records alone. Schema changes during development require a
-new database or a deliberate manual update; there is no migration history in the
-code. Older database files may retain their previous constraints.
-
-## Authentication and permissions
-
-Registration accepts either role. Emails are normalized and passwords are hashed
-with Argon2. Login verifies the password and returns a signed JWT with an expiry.
-The same token is also set in an HTTP-only, SameSite=Lax cookie. Clients can send
-the cookie or an `Authorization: Bearer` header; a nonempty cookie takes priority.
-
-Every authenticated request verifies the signature and expiry, then loads the
-user. A token also contains an HMAC derived from the account's password hash; this
-prevents a token for a deleted account from working if SQLite reuses its ID.
-Password hashes never appear in API responses. Logout clears the cookie; there
-is no server-side token revocation list.
-
-Teachers manage their own questions and assigned quizzes. They can use their own
-private questions or any public question in a quiz. Students can access assigned
-published quizzes and their own practice quizzes and attempts. Teachers can view
-results and analytics only for their own assigned quizzes.
-
-Students receive response schemas that omit correct answers and explanations
-until an attempt is submitted. The server always grades its stored content.
-
-## Quiz lifecycle
-
-1. A teacher creates a draft with question IDs, order, and point values. A draft
-   can be replaced with `PUT`; it can be empty while being assembled.
-2. Publishing requires available questions. The service copies each question's
-   content, correct answer, and explanation into the link's JSON `snapshot`.
-3. Published quizzes cannot be edited. Editing or deleting a source question does
-   not change their content or previous results.
-4. The teacher assigns the published quiz to registered students. Repeating an
-   assignment keeps the existing assignment.
-
-A student can search public questions and create a practice quiz. It is published
-immediately with snapshots, one point per question, no deadline, and unlimited
-attempts. It uses the same attempt flow as an assigned quiz.
-
-## Attempts and grading
-
-Starting an attempt resumes an unfinished attempt if one exists. Otherwise it
-checks the deadline and attempt limit and creates a new attempt. Assigned quizzes
-default to one attempt; `max_attempts: null` means unlimited.
-
-Submitting checks the deadline again. An already submitted attempt is rejected.
-Duplicate answer IDs, unrelated question IDs, and responses of the wrong type are
-rejected. Omitted answers are stored as unanswered and receive zero points.
-
-* Multiple choice: compare the submitted choice ID with the correct choice ID.
-* True/false: compare JSON booleans strictly.
-* Short answer: normalize case and whitespace, then compare with the
-  list of accepted answers. There is no fuzzy matching or partial credit.
-
-A correct answer earns its question's full points. The score is the sum of those
-points. The submitted review includes each response, correct answer, explanation,
-and awarded points. Teacher analytics aggregate submitted attempts into average,
-minimum, maximum, per-question accuracy, and score buckets; unfinished attempts
-are counted separately.
-
-Timestamps use UTC. `UTCDateTime` converts timezone-aware input to UTC and restores
-the timezone when SQLite returns a naive timestamp, so deadline comparisons work.
-
-## Deliberate limits
-
-This is a local learning application. Requests use ordinary SQLAlchemy sessions
-and commits. Sequential attempt limits and repeat-submission checks remain, but
-there is no coordination for simultaneous starts, submissions, or registrations.
-There are no CSRF checks or custom cache-control headers. Keep these limits in
-mind before exposing it to multiple users on the internet.
+The default database is `problems.db`. Older database files are left intact for
+reference. `create_all()` does not transform their former user or quiz schemas;
+old student accounts lack grades, so students log in anew and teachers reassign
+problems. There are no concurrency locks, CSRF checks, or deployment components.

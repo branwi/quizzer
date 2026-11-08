@@ -1,41 +1,36 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response
 
-from app.dependencies import CurrentTeacher, DbSession
-from app.schemas import QuestionCreate, QuestionFilters, QuestionForTeacher, QuestionPage
+from app.dependencies import DbSession, get_teacher
+from app.schemas import QuestionCreate, QuestionFilters, QuestionForTeacher
 from app.services import questions
 
-router = APIRouter(prefix="/questions", tags=["questions"])
+router = APIRouter(prefix="/questions", tags=["manage bank"], dependencies=[Depends(get_teacher)])
 QuestionId = Annotated[int, Path(ge=1, le=2**63 - 1)]
 
 
-@router.post("", response_model=QuestionForTeacher, status_code=status.HTTP_201_CREATED)
-def create(data: QuestionCreate, user: CurrentTeacher, db: DbSession) -> QuestionForTeacher:
-    return questions.create(db, user, data)
+@router.post("", response_model=QuestionForTeacher, status_code=201)
+def create(data: QuestionCreate, db: DbSession):
+    return questions.create(db, data)
 
 
-@router.get("", response_model=QuestionPage)
-def list_own(
-    filters: Annotated[QuestionFilters, Query()], user: CurrentTeacher, db: DbSession
-) -> QuestionPage:
-    return questions.list_own(db, user, filters)
+@router.get("", response_model=list[QuestionForTeacher])
+def list_questions(filters: Annotated[QuestionFilters, Query()], db: DbSession):
+    return questions.list_questions(db, filters)
 
 
 @router.get("/{question_id}", response_model=QuestionForTeacher)
-def get(question_id: QuestionId, user: CurrentTeacher, db: DbSession) -> QuestionForTeacher:
-    return questions.get(db, user, question_id)
+def get(question_id: QuestionId, db: DbSession):
+    return questions.get(db, question_id)
 
 
 @router.put("/{question_id}", response_model=QuestionForTeacher)
-def replace(
-    question_id: QuestionId, data: QuestionCreate, user: CurrentTeacher, db: DbSession
-) -> QuestionForTeacher:
-    return questions.replace(db, user, question_id, data)
+def replace(question_id: QuestionId, data: QuestionCreate, db: DbSession):
+    return questions.replace(db, question_id, data)
 
 
-@router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete(question_id: QuestionId, user: CurrentTeacher, db: DbSession) -> Response:
-    questions.delete(db, user, question_id)
-    response = Response(status_code=status.HTTP_204_NO_CONTENT)
-    return response
+@router.delete("/{question_id}", status_code=204)
+def delete(question_id: QuestionId, db: DbSession):
+    questions.delete(db, question_id)
+    return Response(status_code=204)

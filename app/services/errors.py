@@ -6,9 +6,5 @@ class ResourceNotFound(ServiceError):
     pass
 
 
-class StateConflict(ServiceError):
-    pass
-
-
 class InvalidInput(ServiceError):
     pass

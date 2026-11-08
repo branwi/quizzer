@@ -1,116 +1,74 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Question
-from app.schemas import (
-    QuestionCreate,
-    QuestionFilters,
-    QuestionForStudent,
-    QuestionForTeacher,
-    QuestionPage,
-    UserPublic,
-)
-from app.services.access import require_teacher
+from app.models import Question, QuestionType
+from app.schemas import AnswerFeedback, CheckAnswer, QuestionCreate, QuestionFilters
+from app.services.errors import InvalidInput, ResourceNotFound
+from app.services.grading import grade
 
 
-class QuestionNotFound(Exception):
-    pass
-
-
-def for_student(question: Question) -> QuestionForStudent:
-    # Explicit projection: never pass the ORM object or an answer key to a student view.
-    return QuestionForStudent(
-        id=question.id,
-        author_id=question.author_id,
-        type=question.type,
-        text=question.text,
-        choices=question.choices,
-        topic=question.topic,
-        is_public=question.is_public,
-        created_at=question.created_at,
-        updated_at=question.updated_at,
-    )
-
-
-def for_teacher(question: Question) -> QuestionForTeacher:
-    return QuestionForTeacher(
-        **for_student(question).model_dump(),
-        correct_answer=question.correct_answer,
-        explanation=question.explanation,
-    )
-
-
-def _own_question(db: Session, user: UserPublic, question_id: int) -> Question:
-    require_teacher(user)
-    question = db.scalar(
-        select(Question).where(
-            Question.id == question_id,
-            Question.author_id == user.id,
-        )
-    )
+def get(db: Session, question_id: int) -> Question:
+    question = db.get(Question, question_id)
     if question is None:
-        raise QuestionNotFound
+        raise ResourceNotFound("Question not found")
     return question
 
 
-def create(db: Session, user: UserPublic, data: QuestionCreate) -> QuestionForTeacher:
-    require_teacher(user)
-    question = Question(author_id=user.id, **data.model_dump())
-    db.add(question)
-    db.commit()
-    db.refresh(question)
-    return for_teacher(question)
-
-
-def get(db: Session, user: UserPublic, question_id: int) -> QuestionForTeacher:
-    return for_teacher(_own_question(db, user, question_id))
-
-
-def list_own(db: Session, user: UserPublic, filters: QuestionFilters) -> QuestionPage:
-    require_teacher(user)
-    conditions = [Question.author_id == user.id]
+def list_questions(db: Session, filters: QuestionFilters) -> list[Question]:
+    statement = select(Question)
     if filters.q:
-        conditions.append(
+        statement = statement.where(
             or_(
                 Question.text.icontains(filters.q, autoescape=True),
                 Question.topic.icontains(filters.q, autoescape=True),
             )
         )
     if filters.topic:
-        conditions.append(Question.topic == filters.topic)
-    if filters.type is not None:
-        conditions.append(Question.type == filters.type)
-    if filters.is_public is not None:
-        conditions.append(Question.is_public == filters.is_public)
-    total = db.scalar(select(func.count()).select_from(Question).where(*conditions))
-    rows = db.scalars(
-        select(Question)
-        .where(*conditions)
-        .order_by(Question.created_at.desc(), Question.id.desc())
-        .offset((filters.page - 1) * filters.page_size)
-        .limit(filters.page_size)
-    ).all()
-    return QuestionPage(
-        items=[for_teacher(question) for question in rows],
-        total=total,
-        page=filters.page,
-        page_size=filters.page_size,
-    )
+        statement = statement.where(Question.topic == filters.topic)
+    if filters.type:
+        statement = statement.where(Question.type == filters.type)
+    return list(db.scalars(statement.order_by(Question.id)))
 
 
-def replace(
-    db: Session, user: UserPublic, question_id: int, data: QuestionCreate
-) -> QuestionForTeacher:
-    question = _own_question(db, user, question_id)
-    # PUT replaces the complete content, including clearing obsolete choices on a type change.
+def create(db: Session, data: QuestionCreate) -> Question:
+    question = Question(**data.model_dump())
+    db.add(question)
+    db.commit()
+    db.refresh(question)
+    return question
+
+
+def replace(db: Session, question_id: int, data: QuestionCreate) -> Question:
+    question = get(db, question_id)
     for field, value in data.model_dump().items():
         setattr(question, field, value)
     db.commit()
     db.refresh(question)
-    return for_teacher(question)
+    return question
 
 
-def delete(db: Session, user: UserPublic, question_id: int) -> None:
-    question = _own_question(db, user, question_id)
-    db.delete(question)
+def delete(db: Session, question_id: int) -> None:
+    db.delete(get(db, question_id))
     db.commit()
+
+
+def check_answer(db: Session, question_id: int, data: CheckAnswer) -> AnswerFeedback:
+    question = get(db, question_id)
+    response = data.response
+    if response is not None:
+        if question.type == QuestionType.TRUE_FALSE:
+            if type(response) is not bool:
+                raise InvalidInput("True/false responses must be JSON booleans or null")
+        elif not isinstance(response, str):
+            raise InvalidInput("Text and choice responses must be strings or null")
+        if question.type == QuestionType.MCQ and response != "":
+            if response not in {choice["id"] for choice in question.choices}:
+                raise InvalidInput("Response must be one of this question's choice ids")
+    return AnswerFeedback(
+        question_id=question.id,
+        is_correct=grade(
+            {"type": question.type, "correct_answer": question.correct_answer}, response
+        ),
+        correct_answer=question.correct_answer,
+        explanation=question.explanation,
+    )

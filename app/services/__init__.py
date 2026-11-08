@@ -1,1 +1,1 @@
-"""Business rules shared by HTTP routers and future browser views."""
+"""Shared login, question bank, assignments, and answer checking."""

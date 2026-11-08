@@ -1,69 +1,26 @@
-from secrets import compare_digest, token_urlsafe
-
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.config import Settings
-from app.models import User
-from app.schemas import LoginRequest, LoginResponse, RegisterRequest, UserPublic
-from app.security import (
-    TokenIdentity,
-    account_version,
-    create_access_token,
-    hash_password,
-    verify_password,
-)
+from app.models import Role, User
+from app.schemas import LoginRequest
 
-# Unknown accounts still take the expensive password-verification path.
-_DUMMY_PASSWORD_HASH = hash_password(token_urlsafe(32))
+TEACHER_PROFILE = ("brian", "12")
 
 
-class InvalidCredentials(Exception):
-    pass
-
-
-class EmailAlreadyRegistered(Exception):
-    pass
-
-
-def public_user(user: User) -> UserPublic:
-    return UserPublic(
-        id=user.id, name=user.name, email=user.email, role=user.role, created_at=user.created_at
+def login(db: Session, data: LoginRequest) -> User:
+    profile_key = (data.first_name.casefold(), data.grade.casefold())
+    teacher_key = tuple(value.casefold() for value in TEACHER_PROFILE)
+    role = Role.TEACHER if profile_key == teacher_key else Role.STUDENT
+    user = db.scalar(
+        select(User).where(
+            func.casefold(User.first_name) == profile_key[0],
+            func.casefold(User.grade) == profile_key[1],
+        )
     )
-
-
-def register(db: Session, data: RegisterRequest) -> UserPublic:
-    if db.scalar(select(User.id).where(User.email == data.email)) is not None:
-        raise EmailAlreadyRegistered
-    user = User(
-        name=data.name,
-        email=data.email,
-        role=data.role,
-        password_hash=hash_password(data.password.get_secret_value()),
-    )
-    db.add(user)
+    if user is None:
+        user = User(first_name=data.first_name, grade=data.grade)
+        db.add(user)
+    user.role = role
     db.commit()
     db.refresh(user)
-    return public_user(user)
-
-
-def authenticate(db: Session, data: LoginRequest, settings: Settings) -> LoginResponse:
-    user = db.scalar(select(User).where(User.email == data.email))
-    hashed = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
-    valid = verify_password(data.password.get_secret_value(), hashed)
-    if user is None or not valid:
-        raise InvalidCredentials
-    return LoginResponse(
-        user=public_user(user),
-        access_token=create_access_token(user.id, settings, hashed_password=user.password_hash),
-        expires_in=settings.access_token_minutes * 60,
-    )
-
-
-def current_user(db: Session, identity: TokenIdentity, settings: Settings) -> UserPublic:
-    user = db.get(User, identity.user_id)
-    if user is None or not compare_digest(
-        identity.account_version, account_version(user.password_hash, settings)
-    ):
-        raise InvalidCredentials
-    return public_user(user)
+    return user

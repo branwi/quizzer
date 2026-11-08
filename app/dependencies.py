@@ -1,27 +1,22 @@
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.schemas import UserPublic
+from app.models import Role, User
 from app.security import COOKIE_NAME, decode_access_token
-from app.services import access, auth
 
 DbSession = Annotated[Session, Depends(get_db)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def unauthorized(detail: str = "Not authenticated") -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detail,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def unauthorized() -> HTTPException:
+    return HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
 
 
 def get_current_user(
@@ -29,35 +24,33 @@ def get_current_user(
     db: DbSession,
     settings: AppSettings,
     bearer: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-) -> UserPublic:
-    # A nonempty cookie takes precedence, even if a valid header is also present.
+) -> User:
     token = request.cookies.get(COOKIE_NAME) or (bearer.credentials if bearer else None)
     if not token:
         raise unauthorized()
     try:
-        identity = decode_access_token(token, settings)
-        return auth.current_user(db, identity, settings)
-    except (InvalidTokenError, auth.InvalidCredentials):
+        user_id = decode_access_token(token, settings)
+    except InvalidTokenError:
         raise unauthorized() from None
-
-
-CurrentUser = Annotated[UserPublic, Depends(get_current_user)]
-
-
-def get_teacher(user: CurrentUser) -> UserPublic:
-    try:
-        access.require_teacher(user)
-    except access.PermissionDenied:
-        raise HTTPException(status_code=403, detail="Teacher role required") from None
+    user = db.get(User, user_id)
+    if user is None:
+        raise unauthorized()
     return user
 
 
-CurrentTeacher = Annotated[UserPublic, Depends(get_teacher)]
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def get_student(user: CurrentUser) -> UserPublic:
-    access.require_student(user)
+def get_teacher(user: CurrentUser) -> User:
+    if user.role != Role.TEACHER:
+        raise HTTPException(403, "Teacher access required")
     return user
 
 
-CurrentStudent = Annotated[UserPublic, Depends(get_student)]
+def get_student(user: CurrentUser) -> User:
+    if user.role != Role.STUDENT:
+        raise HTTPException(403, "Student access required")
+    return user
+
+
+CurrentStudent = Annotated[User, Depends(get_student)]

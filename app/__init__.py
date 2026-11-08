@@ -1,1 +1,1 @@
-"""Quiz platform application."""
+"""Problem bank and assigned problems API."""
