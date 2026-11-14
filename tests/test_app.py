@@ -3,8 +3,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from app import main
-from app.database import create_tables, get_db, make_engine
+from backend import main
+from backend.database import create_tables, get_db, make_engine
 
 
 def test_startup_creates_only_three_tables_and_serves_docs(tmp_path, auth_settings, monkeypatch):
@@ -27,6 +27,15 @@ def test_startup_creates_only_three_tables_and_serves_docs(tmp_path, auth_settin
             }
             assert client.get("/health").json() == {"status": "ok"}
             assert client.get("/docs").status_code == 200
+            home = client.get("/")
+            assert home.status_code == 200
+            assert "text/html" in home.headers["content-type"]
+            assert "Problem Room" in home.text
+            assert 'id="login-form"' in home.text
+            assert 'id="student-view"' in home.text
+            assert 'id="teacher-view"' in home.text
+            assert client.get("/static/app.js").status_code == 200
+            assert client.get("/static/styles.css").status_code == 200
             paths = client.get("/openapi.json").json()["paths"]
             assert "/api/assignments" in paths and "/api/auth/login" in paths
             assert {path for path in paths if path.startswith("/api/auth/")} == {
@@ -58,6 +67,7 @@ def test_startup_creates_only_three_tables_and_serves_docs(tmp_path, auth_settin
         ("POST", "/api/bank/questions/1/check"),
         ("GET", "/api/assignments"),
         ("POST", "/api/assignments"),
+        ("PUT", "/api/assignments/1"),
     ],
 )
 def test_private_routes_require_login(client, method, path):

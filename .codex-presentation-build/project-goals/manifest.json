@@ -1,0 +1,52 @@
+{
+  "presentation": {
+    "fileId": "1d_U1z6O0KSKM_2JIKJk6YLgAbxEx1hph7glFPMF-cGw",
+    "mimeType": "application/vnd.google-apps.presentation",
+    "title": "Problem Room — Project Goals Achieved",
+    "url": "https://docs.google.com/presentation/d/1d_U1z6O0KSKM_2JIKJk6YLgAbxEx1hph7glFPMF-cGw/edit?usp=drivesdk"
+  },
+  "slides": [
+    {
+      "title": "Centralize practice problems",
+      "body": "The app stores questions in a shared SQLite database. Teachers can create, edit, and delete problems through the question editor, while students browse the bank and filter by topic. Multiple choice, true or false, and short answer questions support different kinds of practice. Pagination keeps the bank manageable as it grows.",
+      "sources": "backend/models.py; backend/routers/questions.py; backend/routers/bank.py; backend/services/questions.py; frontend/app.js",
+      "id": "goal_slide_01",
+      "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d75wf0LBPxDPvqPIxkYjJ73zGe-_xx-EkTi1rZqGMsbFdUBznvb_liyLyUknWLXi5GcQIKjHYqlLfAaznBjhtmHBEQ18Lw0nf5bShKcfo682Nfz9rHr7RM6pMQu4S61kQ6OF3EaJDIRa_LzeroLM1U1MCaejNJAdlCk0GdgUky8Jhw=s1600"
+    },
+    {
+      "title": "Give students individualized practice",
+      "body": "Teachers choose a student and select the questions they want that student to practice. Saving records the selected student and question IDs in the assignment table. When students open their assignments, the backend uses their logged-in profile to return their own list. Teachers can change each student's selection as their needs change.",
+      "sources": "backend/models.py: AssignedProblem; backend/routers/assignments.py; backend/services/assignments.py; frontend/app.js: loadSelection and assignment form",
+      "id": "goal_slide_02",
+      "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d4jNOYC3DKIjg7SfqvmV7r2uhJmooGSdWrwsDQg8J1sDBKRQRqSGWnAvnJhiHlCJb_bVU3z2rJbAUI9Qngag1uihpQulPYUdVEtRqVTD59brVYlyOV4V3pdNEGg5jRTvTu-L_zc8wxCvjpzdUykdwYYhTcnTs4jTYTN1r0EJy4qZNX-=s1600"
+    },
+    {
+      "title": "Provide immediate feedback",
+      "body": "Students enter an answer and send it to the backend with the Check answer button. The grading service compares the response with the stored answer using the question's type. The page immediately displays whether the response is correct and shows an explanation when available. Short answers ignore capitalization and extra spaces.",
+      "sources": "backend/routers/bank.py; backend/services/grading.py; frontend/app.js: studentCard",
+      "id": "goal_slide_03",
+      "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d5htUZH1FhGi6iNiYUy6Au9gHZJ3XVOSqGwh6TRMBpGSVkDDfkcFY2nmfRcq3hSJgIg3DTRreX9gje7wf6wKFNjdEAAQ_b8VPlRd6fuV0acCSeA9BdIJ7GqzSbkvuERGrcqjtr5-UUNzr7I293BLwO_m59PqRtv85W2CCHcwWKlzXyc=s1600"
+    },
+    {
+      "title": "Separate teacher and student responsibilities",
+      "body": "After login, the frontend reads the user's role and displays the appropriate controls. Teachers can manage questions and assignments, while students can practice and check answers. The backend also checks the stored role before allowing restricted actions, so changing the visible interface does not grant additional permissions.",
+      "sources": "backend/services/auth.py; backend/dependencies.py; backend/routers/questions.py; backend/routers/assignments.py; frontend/app.js: openRoom. Scope: role enforcement applies to the current demo profile login, which does not verify identity.",
+      "id": "goal_slide_04",
+      "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d4-tImBYhSMV5bALpyjASGwW9xjCDoHqIPz3xmVjeAfQq4G6O63IDIi9KITCy74CMnOWgFMaVKkEAag12xZwx2q_aoAh9sIEltoONvgCmS7uFigRK5Dkh3R4Mm9UluvhwihGD78YdwOMdOlWo0jy6xWmLrv2d7DXy6jGMdkyjcfvBM7=s1600"
+    },
+    {
+      "title": "Expand the bank efficiently",
+      "body": "Running the online importer retrieves MathNet competition problems through Hugging Face. It selects English questions with integer answers and filters out problems that appear to require diagrams. The importer validates the selected questions, records their sources, and skips previously imported source IDs. This adds problems without entering each one manually.",
+      "sources": "backend/import_online.py; backend/import_problems.py; requirements-import.txt. The importer runs when its command is launched, with no scheduled background imports.",
+      "id": "goal_slide_05",
+      "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d4xNq5FXkFrETweeBiaw_XcS9gNuNM4Dpl01_KxLzZjCCjPusfrv0vxbwRAAazwXR4ouLZH9eUAQW5WeqBLZzh2wokwQ7aGh7TEy58Rix-toH0gUE8RzPA_7leerq7ZVyFLt4k4u4a9nmysSLlW31N8GFSg0X-NMZrAe1GokC_sQywA=s1600"
+    },
+    {
+      "title": "Build a maintainable full-stack application",
+      "body": "The project separates the HTML, CSS, and browser JavaScript from the Python backend. API routers receive requests, service functions handle application logic, and database models define stored records. Validation schemas check incoming data and control responses. This organization makes it easier to follow a feature, test its behavior, and update one part of the app.",
+      "sources": "ARCHITECTURE.md; frontend/index.html; frontend/styles.css; frontend/app.js; backend/routers/; backend/services/; backend/models.py; backend/schemas.py; tests/",
+      "id": "goal_slide_06",
+      "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d52ohaxq-RZwPeiflTi1l6ti_Qrt1uNzPcXJ6Ybw22FWTMFSHVBYEYgfeL-TjJiMmdnE61mcHt1o3lsrHQzi8S3Z-yAWFbHD2QY1AqDT_NKNGGl_W-r9utMSAeKnWkC6RS7MIVKAJ1sNJVp8IAsTGJts_bmJjMI_gnb_0yoQjy4eY2P=s1600"
+    }
+  ]
+}

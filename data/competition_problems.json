@@ -1,0 +1,74 @@
+[
+  {
+    "topic": "Number Theory",
+    "text": "How many positive integers are divisors of 6000?\n\nSource: NZMOC, Sample Number Theory #1, by Ross Atkins (CC BY 4.0).",
+    "correct_answer": ["40"],
+    "explanation": "6000 = 2⁴ × 3 × 5³. A divisor can use 0–4 factors of 2, 0–1 factors of 3, and 0–3 factors of 5, giving 5 × 2 × 4 = 40 divisors.\n\nSource: New Zealand Mathematical Olympiad Committee, Ross Atkins. https://www.mathsolympiad.org.nz/resources/problems/sample_number_theory_problems.pdf\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Number Theory",
+    "text": "Find all primes that can be written both as a sum and as a difference of two primes. Note that 1 is not a prime.\n\nSource: NZMOC, Sample Number Theory #2, by Ross Atkins (CC BY 4.0).",
+    "correct_answer": ["5"],
+    "explanation": "An odd prime written as a sum of two primes must be 2 + q. Written as a difference, it must be r − 2. Thus q, q + 2, and q + 4 are prime. One of these is divisible by 3, forcing q = 3 and the required prime to be 5. Indeed, 5 = 2 + 3 = 7 − 2. The prime 2 cannot be a sum of two primes.\n\nSource: New Zealand Mathematical Olympiad Committee, Ross Atkins. https://www.mathsolympiad.org.nz/resources/problems/sample_number_theory_problems.pdf\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Combinatorics",
+    "text": "How many odd positive integers are less than 7000, and are not a multiple of 5 nor 7?\n\nSource: NZMOC, Sample Combinatorics #1, by Ross Atkins (CC BY 4.0).",
+    "correct_answer": ["2400", "2,400"],
+    "explanation": "There are 3500 odd positive integers below 7000. Of these, 700 are multiples of 5, 500 are multiples of 7, and 100 are multiples of both. Inclusion–exclusion gives 3500 − 700 − 500 + 100 = 2400.\n\nSource: New Zealand Mathematical Olympiad Committee, Ross Atkins. https://www.mathsolympiad.org.nz/resources/problems/sample_combinatorics_problems.pdf\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Combinatorics",
+    "text": "In how many ways can you place Alice, Bob and Chris in a line of 10 seats, so that no two people are seated next to each other?\n\nSource: NZMOC, Sample Combinatorics #3, by Ross Atkins (CC BY 4.0).",
+    "correct_answer": ["336"],
+    "explanation": "For occupied positions a < b < c with gaps of at least 2, the positions a, b − 1, c − 2 form any three-element subset of 1 through 8. There are C(8,3) = 56 such seat selections. Assigning the three distinct people gives 56 × 3! = 336.\n\nSource: New Zealand Mathematical Olympiad Committee, Ross Atkins. https://www.mathsolympiad.org.nz/resources/problems/sample_combinatorics_problems.pdf\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Algebra",
+    "text": "Let a₁, a₂, a₃, … be an infinite sequence such that aₙ₊₁ = aₙ − aₙ₋₁ for n ≥ 2. Given a₁ = 2, determine all possible values of a₂₀₁₇.\n\nSource: NZMOC, Sample Algebra #1, by Ross Atkins (CC BY 4.0).",
+    "correct_answer": ["2"],
+    "explanation": "If a₂ = t, the sequence starts 2, t, t − 2, −2, −t, 2 − t, 2, t, … . It repeats every six terms. Since 2017 leaves remainder 1 when divided by 6, a₂₀₁₇ = a₁ = 2.\n\nSource: New Zealand Mathematical Olympiad Committee, Ross Atkins. https://www.mathsolympiad.org.nz/resources/problems/sample_algebra_problems.pdf\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Number Theory",
+    "text": "How many positive integers less than 2019 are divisible by either 18 or 21, but not both?\n\nSource: NZMOC, NZMO Round One 2019 #1 (CC BY 4.0).",
+    "correct_answer": ["176"],
+    "explanation": "Below 2019 there are 112 multiples of 18 and 96 multiples of 21. Their least common multiple is 126, with 16 multiples below 2019. Remove these common multiples from both counts: 112 + 96 − 2 × 16 = 176.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2019\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Geometry",
+    "text": "In triangle ABC, points D and E lie on the interior of segments AB and AC, respectively, such that AD = 1, DB = 2, BC = 4, CE = 2 and EA = 3. Let the line DE intersect the line BC at F. Determine the length of CF.\n\nSource: NZMOC, NZMO Round One 2019 #3 (CC BY 4.0).",
+    "correct_answer": ["2", "2.0"],
+    "explanation": "ABC is a 3–4–5 triangle. Choose B = (0,0), A = (0,3), C = (4,0). Then D = (0,2) and E = (2.4,1.2). Line DE has equation y = 2 − x/3, meeting line BC at F = (6,0). Thus CF = 2.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2019\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Number Theory",
+    "text": "Find all positive integers n such that n⁴ − n³ + 3n² + 5 is a perfect square.\n\nSource: NZMOC, NZMO Round One 2019 #5 (CC BY 4.0).",
+    "correct_answer": ["2"],
+    "explanation": "Let F = 4(n⁴ − n³ + 3n² + 5). For n ≥ 1, (2n² − n + 2)² < F < (2n² − n + 5)². The two possible square values lead to n² − 6n − 11 = 0, which has no integer roots, or (5n + 2)(n − 2) = 0. The only positive integer candidate is n = 2, and its original expression equals 25.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2019\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Number Theory",
+    "text": "What is the maximum integer n such that 50! / 2ⁿ is an integer? Here 50! = 1 × 2 × 3 × … × 50.\n\nSource: NZMOC, NZMO Round One 2020 #1 (CC BY 4.0).",
+    "correct_answer": ["47"],
+    "explanation": "Count factors of 2 in 50!: floor(50/2) + floor(50/4) + floor(50/8) + floor(50/16) + floor(50/32) = 25 + 12 + 6 + 3 + 1 = 47.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2020\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Number Theory",
+    "text": "Determine all prime numbers p such that p² − 6 and p² + 6 are both prime numbers.\n\nSource: NZMOC, NZMO Round One 2020 #4 (CC BY 4.0).",
+    "correct_answer": ["5"],
+    "explanation": "For a prime p > 5, p² ends in 1 or 9. Consequently one of p² − 6 and p² + 6 is a multiple of 5 larger than 5. Check the remaining primes 2, 3 and 5: only p = 5 works, giving 19 and 31.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2020\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Combinatorics",
+    "text": "In a sequence of numbers, a term is called golden if it is divisible by the term immediately before it. What is the maximum possible number of golden terms in a permutation of 1, 2, 3, …, 2021?\n\nSource: NZMOC, NZMO Round One 2021 #3 (CC BY 4.0).",
+    "correct_answer": ["1010", "1,010"],
+    "explanation": "Each golden term b has a distinct predecessor a with b ≥ 2a, so a ≤ 1010. Thus at most 1010 terms can be golden. Achieve this by grouping numbers according to their odd part and listing each group in doubling order, such as 1,2,4,…,1024 then 3,6,12,…,1536. Every even number is golden, giving 1010.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2021\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  },
+  {
+    "topic": "Geometry",
+    "text": "ABCD is a rectangle with side lengths AB = CD = 1 and BC = DA = 2. Let M be the midpoint of AD. Point P lies on the opposite side of line MB to A, such that triangle MBP is equilateral. Find the value of angle PCB in degrees.\n\nSource: NZMOC, NZMO Round One 2022 #1 (CC BY 4.0).",
+    "correct_answer": ["30", "30°", "30 degrees"],
+    "explanation": "Set A = (0,0), B = (1,0), C = (1,2), D = (0,2). Then M = (0,1), so MB = MC = √2. Since MBP is equilateral, MP = √2 too. Thus M is the circumcenter of triangle BCP. The central angle BMP is 60°, so the inscribed angle BCP is 30°.\n\nSource: New Zealand Mathematical Olympiad Committee. https://www.mathsolympiad.org.nz/competitions/nzmo/files/problems.php?round=1&year=2022\nLicense: https://creativecommons.org/licenses/by/4.0/\nTranscribed for final-answer practice; explanation added for this app."
+  }
+]

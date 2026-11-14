@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#245d50">
+  <meta name="description" content="A little space to learn. Find your assigned problems, explore the bank, and practice at your own pace.">
+  <title>Problem Room</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.css" integrity="sha384-WwGtaC6ywCHxA5cstpj/3+xIZvTez8dq2IcBQaXRkenHZ7FVVq1ZROtURwfbtTlG" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js" integrity="sha384-a1WQdjRj162i159OYq041X6I4K8NenkrI09LlPmiHg0YOb7CR+wJOraXwK9abpnE" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js" integrity="sha384-bjyGPfbij8/NDKJhSGZNP/khQVgtHUE5exjm4Ydllo42FwIgYsdLO2lXGmRBf5Mz" crossorigin="anonymous" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <div id="account" class="account" hidden>
+        <span id="profile-label"></span>
+        <button id="refresh-button" class="button subtle" type="button">Refresh</button>
+        <button id="logout-button" class="button subtle" type="button">Log out</button>
+      </div>
+    </header>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <main>
+      <p id="loading" class="loading" role="status">Opening your room…</p>
+      <section id="login-view" class="login-layout" aria-label="Log in" hidden>
+        <form id="login-form" class="login-card">
+          <label for="first-name">First name</label>
+          <input id="first-name" name="first_name" autocomplete="given-name" maxlength="120" placeholder="Your first name" required>
+          <label for="grade">Grade</label>
+          <select id="grade" name="grade" required>
+            <option value="" disabled selected>Select grade</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+          </select>
+          <button class="button primary wide" type="submit">Log in</button>
+        </form>
+      </section>
+
+      <section id="student-view" aria-label="Practice problems" hidden>
+        <nav class="tabs" aria-label="Student pages">
+          <button id="assigned-tab" class="tab active" type="button" aria-pressed="true">Assigned problems <span id="assigned-count" class="count">0</span></button>
+          <button id="bank-tab" class="tab" type="button" aria-pressed="false">Problem bank</button>
+        </nav>
+        <p id="problem-count" class="problem-summary small muted"></p>
+        <div id="bank-filters" class="bank-filters" hidden>
+          <label for="topic-filter">Topic</label><select id="topic-filter"><option value="">All topics</option></select>
+        </div>
+        <nav id="student-pagination-top" class="pagination" aria-label="Problem bank pages" hidden></nav>
+        <div id="student-problems" class="problem-list" aria-live="polite"></div>
+        <nav id="student-pagination-bottom" class="pagination" aria-label="Problem bank pages" hidden></nav>
+      </section>
+
+      <section id="teacher-view" aria-label="Manage problems" hidden>
+        <div class="teacher-toolbar"><div><label for="student-select">Student</label><select id="student-select"><option value="">Select student</option></select></div><button id="add-problem-button" class="button secondary" type="button">+ Add problem</button></div>
+        <details id="editor" class="editor-panel">
+          <summary id="editor-title">Add problem</summary>
+          <form id="question-form" class="question-editor">
+            <label for="question-topic">Topic</label><input id="question-topic" maxlength="120" required>
+            <label for="question-text">Problem</label><textarea id="question-text" rows="3" maxlength="10000" required></textarea>
+            <label for="accepted-answers">Accepted answers <span class="label-hint">one per line</span></label><textarea id="accepted-answers" rows="2" placeholder="An accepted answer" required></textarea>
+            <label for="question-explanation">Explanation <span class="label-hint">optional</span></label><textarea id="question-explanation" rows="2" maxlength="10000"></textarea>
+            <div class="form-actions"><button id="save-question-button" class="button primary" type="submit">Add to bank</button><button id="cancel-edit-button" class="button subtle" type="button">Cancel</button></div>
+          </form>
+        </details>
+        <form id="assignment-form">
+          <p id="selection-count" class="problem-summary small muted"></p>
+          <nav id="teacher-pagination-top" class="pagination" aria-label="Problem bank pages" hidden></nav>
+          <div id="teacher-problems" class="problem-list"></div>
+          <nav id="teacher-pagination-bottom" class="pagination" aria-label="Problem bank pages" hidden></nav>
+          <div class="assignment-footer"><button id="save-assignments-button" class="button primary" type="submit" disabled>Save assignments</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <noscript>Please enable JavaScript to log in and view your problems.</noscript>
+</body>
+</html>

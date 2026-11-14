@@ -1,0 +1,23 @@
+[
+  {
+    "title": "Problems did not display accurately",
+    "body": "Some problems displayed mathematical notation incorrectly. The frontend now uses KaTeX to turn the stored math notation into readable equations, including fractions and exponents. It applies this formatting when questions and answer feedback appear. This makes mathematical expressions easier to understand while keeping the original problem text in the database.",
+    "sources": "Issue supplied by the user. Implementation: frontend/index.html (KaTeX assets); frontend/app.js: renderMath, studentCard, teacherCard.",
+    "slide": 7,
+    "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d526Y7RsGlSCAyb2b0dgGgOyNfd2ACfKpDg6ZViGMbMKHOVgFhdFOInbnZUcIqzRVH4j6rOEGzJaJTGbuJWldfn5f5X-4Uiow_y-sSeNAHrpOrNHE6akYpz-qFyq1so_IAsDcF-bsKgZxansgO43r_u40Vjpv08k9TSYV8iY-ZRrVaR=s1600"
+  },
+  {
+    "title": "The bank loaded every problem",
+    "body": "The problem bank initially downloaded and rendered every question, creating unnecessary work as the bank grew. Pagination now requests 20 questions at a time. The backend limits the database query to the requested page and returns the total count. The frontend renders that page and provides navigation controls to load the next or previous set.",
+    "sources": "Issue supplied by the user. Implementation: backend/services/questions.py: list_questions uses SQL LIMIT and OFFSET; frontend/app.js: PAGE_SIZE, loadStudent, loadTeacherPage and pagination controls.",
+    "slide": 8,
+    "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d6G0q9bfmvTlcoLDwHYLJ4iCrWlVlBfVbS_xMBGdDiyT4hKkzAHnS7KbhpVNGjnh9qagOFk9rzS9mw9xA22Lznncle79c83H_E0RwJOUElljqNQsetAtQ0pDbYYOC1vFwRd1t78eTovYyC_J2xEKXioTf7fbE8eCX2hWjuNw_OYYfwf=s1600"
+  },
+  {
+    "title": "Selections needed to survive pagination",
+    "body": "Changing pages replaces the visible checkboxes, so their checked state alone could not preserve a teacher's selections. The frontend now stores selected question IDs in a separate JavaScript Set. Each page restores its checkboxes from that set, and Save sends the complete selection, including questions on other pages.",
+    "sources": "Issue supplied by the user. Implementation: frontend/app.js: state.selected, teacherCard, loadTeacherPage and assignment form PUT with question_ids: [...state.selected]. Selections persist across page navigation during the current session, not across an unsaved browser refresh.",
+    "slide": 9,
+    "thumbnail": "https://lh7-us.googleusercontent.com/docsdf/AFQj2d7UXNoho79FZwqces0uKltt6zch8B7NfC4nefNXhUNc1Lcd7UQKnv0aFMswGiU9UgdXwJO1iDyCUwoTdPsRGESdAY0uLnenNGXrgoB9P10NTsYrkMk49gV-BtRsXnb5pLw04f-SfcDyvoe1kVg9MwnyeGb6odHdbjkOppLMsfYglqLT=s1600"
+  }
+]

@@ -5,10 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
-from app import main
-from app.config import Settings
-from app.models import Role, User
-from app.security import signing_key
+from backend import main
+from backend.config import Settings
+from backend.models import Role, User
+from backend.security import signing_key
 
 
 def test_login_creates_student_profile_and_reopens_it(client, db):

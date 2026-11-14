@@ -2,9 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app import main
-from app.config import Settings, get_settings
-from app.database import create_tables, get_db, make_engine
+from backend import main
+from backend.config import Settings, get_settings
+from backend.database import create_tables, get_db, make_engine
 
 
 @pytest.fixture
@@ -64,21 +64,19 @@ def student(client):
 
 
 @pytest.fixture
-def mcq():
+def short_answer():
     return {
-        "type": "mcq",
         "text": "What is 2 + 2?",
         "topic": "Math",
-        "choices": [{"id": "a", "text": "Four"}, {"id": "b", "text": "Five"}],
-        "correct_answer": "a",
+        "correct_answer": ["four", "4"],
         "explanation": "Two plus two equals four.",
     }
 
 
 @pytest.fixture
-def assigned(client, teacher, student, teacher_profile, mcq):
+def assigned(client, teacher, student, teacher_profile, short_answer):
     client.post("/api/auth/login", json=teacher_profile)
-    response = client.post("/api/questions", json=mcq)
+    response = client.post("/api/questions", json=short_answer)
     assert response.status_code == 201, response.text
     question = response.json()
     response = client.post(

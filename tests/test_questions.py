@@ -1,24 +1,14 @@
 import pytest
 
-QUESTION_TYPES = [
-    {
-        "type": "mcq",
-        "choices": [{"id": "a", "text": "Yes"}, {"id": "b", "text": "No"}],
-        "correct_answer": "a",
-    },
-    {"type": "true_false", "correct_answer": False},
-    {"type": "short_answer", "correct_answer": ["four", "4"]},
-]
 
-
-@pytest.mark.parametrize("content", QUESTION_TYPES)
-def test_teacher_can_manage_each_question_type(client, teacher, content):
-    payload = {"text": " A prompt ", "topic": " Math ", **content}
+def test_teacher_can_manage_short_answer_questions(client, teacher, short_answer):
+    payload = {**short_answer, "text": " A prompt ", "topic": " Math "}
     response = client.post("/api/questions", json=payload)
     assert response.status_code == 201, response.text
     question = response.json()
     assert question["text"] == "A prompt" and question["topic"] == "Math"
-    assert question["correct_answer"] == content["correct_answer"]
+    assert question["correct_answer"] == ["four", "4"]
+    assert set(question) == {"id", "text", "topic", "correct_answer", "explanation"}
     path = f"/api/questions/{question['id']}"
     assert client.get(path).json() == question
     assert client.get("/api/questions").json() == [question]
@@ -27,46 +17,45 @@ def test_teacher_can_manage_each_question_type(client, teacher, content):
     assert client.get("/api/questions").json() == []
 
 
-def test_full_replacement_clears_old_type_fields_and_validates_before_writing(client, teacher, mcq):
-    question = client.post("/api/questions", json=mcq).json()
+def test_full_replacement_clears_explanation_and_validates_before_writing(
+    client, teacher, short_answer
+):
+    question = client.post("/api/questions", json=short_answer).json()
     path = f"/api/questions/{question['id']}"
-    assert client.put(path, json={**mcq, "correct_answer": "bad"}).status_code == 422
+    assert client.put(path, json={**short_answer, "correct_answer": []}).status_code == 422
     assert client.get(path).json() == question
-    payload = {
-        "type": "short_answer",
-        "text": "Name the sum",
-        "topic": "Math",
-        "correct_answer": ["four"],
-    }
+    payload = {"text": "Name the sum", "topic": "Math", "correct_answer": [" four "]}
     result = client.put(path, json=payload)
     assert result.status_code == 200
-    assert result.json()["choices"] is None and result.json()["explanation"] is None
+    assert result.json()["correct_answer"] == ["four"]
+    assert result.json()["explanation"] is None
 
 
 @pytest.mark.parametrize(
     "changes",
     [
-        {"choices": []},
-        {"choices": [{"id": "a", "text": "A"}, {"id": "a", "text": "B"}]},
-        {"correct_answer": "missing"},
+        {"correct_answer": "four"},
         {"correct_answer": True},
+        {"correct_answer": []},
+        {"correct_answer": [" "]},
+        {"correct_answer": [4]},
+        {"correct_answer": [True]},
+        {"correct_answer": ["x" * 2001]},
+        {"correct_answer": ["four"] * 101},
         {"text": " "},
         {"topic": " "},
-        {"type": "essay"},
+        {"type": "short_answer"},
+        {"type": "mcq"},
+        {"type": "true_false"},
+        {"choices": []},
     ],
 )
-def test_invalid_questions_are_rejected(client, teacher, mcq, changes):
-    assert client.post("/api/questions", json={**mcq, **changes}).status_code == 422
+def test_invalid_questions_are_rejected(client, teacher, short_answer, changes):
+    assert client.post("/api/questions", json={**short_answer, **changes}).status_code == 422
     assert client.get("/api/questions").json() == []
 
 
-@pytest.mark.parametrize("answer", [1, "true", None])
-def test_true_false_requires_boolean_answer(client, teacher, answer):
-    payload = {"type": "true_false", "text": "True?", "topic": "Logic", "correct_answer": answer}
-    assert client.post("/api/questions", json=payload).status_code == 422
-
-
-def test_student_cannot_manage_bank_or_see_teacher_answers(client, student, mcq):
+def test_student_cannot_manage_bank_or_see_teacher_answers(client, student, short_answer):
     for method, path in [
         ("GET", "/api/questions"),
         ("POST", "/api/questions"),
@@ -74,18 +63,24 @@ def test_student_cannot_manage_bank_or_see_teacher_answers(client, student, mcq)
         ("PUT", "/api/questions/1"),
         ("DELETE", "/api/questions/1"),
     ]:
-        response = client.request(method, path, json=mcq if method in ("POST", "PUT") else None)
+        response = client.request(
+            method, path, json=short_answer if method in ("POST", "PUT") else None
+        )
         assert response.status_code == 403
         assert "correct_answer" not in response.text
 
 
-def test_teacher_keeps_access_to_bank_after_logging_in_again(client, teacher, mcq, teacher_profile):
-    question = client.post("/api/questions", json=mcq).json()
+def test_teacher_keeps_access_to_bank_after_logging_in_again(
+    client, teacher, short_answer, teacher_profile
+):
+    question = client.post("/api/questions", json=short_answer).json()
     client.post("/api/auth/logout")
     client.post("/api/auth/login", json=teacher_profile)
     assert client.get("/api/questions").json() == [question]
     assert (
-        client.put(f"/api/questions/{question['id']}", json={**mcq, "topic": "New"}).status_code
+        client.put(
+            f"/api/questions/{question['id']}", json={**short_answer, "topic": "New"}
+        ).status_code
         == 200
     )
 

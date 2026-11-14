@@ -3,9 +3,9 @@ from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import Settings
-from app.database import create_tables, make_engine
-from app.models import AssignedProblem, Role, User
+from backend.config import Settings
+from backend.database import create_tables, make_engine
+from backend.models import AssignedProblem, Role, User
 
 
 def test_data_persists_when_database_is_reopened(tmp_path):
